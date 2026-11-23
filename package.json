@@ -1,0 +1,31 @@
+{
+  "name": "portal-tecnocontrol-fiscal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Módulo Fiscal SAT — Portal Operativo Tecnocontrol",
+  "scripts": {
+    "dev": "vite",
+    "server": "esbuild server/index.ts --bundle --platform=node --outfile=server/.dist/index.cjs && node server/.dist/index.cjs",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "lucide-react": "^0.511.0",
+    "pdfjs-dist": "^6.5.438",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.5.0",
+    "tailwindcss": "^4.1.7",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5"
+  }
+}

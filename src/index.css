@@ -1,0 +1,477 @@
+@import "tailwindcss";
+
+@theme {
+  /* Paleta armónica Tecnocontrol — derivada de logotecno.png y optimizada para descanso visual */
+  --color-blue-50: #eef5fb;
+  --color-blue-100: #dbeaf6;
+  --color-blue-200: #bad5ec;
+  --color-blue-300: #8cb9df;
+  --color-blue-400: #5594cb;
+  --color-blue-500: #246eb0;
+  --color-blue-600: #0e4b85;
+  --color-blue-700: #0b3c6c;
+  --color-blue-800: #093057;
+  --color-blue-900: #072544;
+  --color-blue-950: #04182d;
+
+  /* Neutros suaves de baja fatiga visual */
+  --color-slate-50: #f4f7fa;
+  --color-slate-100: #eaeff5;
+  --color-slate-200: #dce3ec;
+
+  /* Semántica equilibrada con el rojo y grafito de logotecno */
+  --color-emerald-50: #edf8f4;
+  --color-emerald-600: #0f8260;
+  --color-emerald-700: #0c694d;
+  --color-rose-50: #fdf1f0;
+  --color-rose-600: #c9362b;
+  --color-rose-700: #a82920;
+  --color-amber-50: #fef8ec;
+  --color-amber-600: #c47615;
+  --color-amber-700: #9f5d0f;
+}
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
+    --tecno-navy: #0e4b85;
+    --tecno-red: #c9362b;
+    --tecno-graphite: #33312e;
+  }
+
+  html,
+  body {
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .font-mono-code {
+    font-family: var(--font-mono);
+  }
+}
+
+/* ==========================================================================
+   SISTEMA DE ANIMACIONES — PORTAL TECNOCONTROL (MÓDULO FISCAL SAT)
+   60fps GPU-accelerated, elegante y respetuoso con prefers-reduced-motion
+   ========================================================================== */
+
+@keyframes pageEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.994);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPop {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes drawerRight {
+  0% {
+    opacity: 0.4;
+    transform: translateX(100%);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawerLeft {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes popoverIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastSlideUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 18px) scale(0.95);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes msgPop {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes barGrow {
+  0% {
+    transform: scaleX(0);
+  }
+
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes floatGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 10px 25px -5px rgba(14, 75, 133, 0.32), 0 0 0 0 rgba(36, 110, 176, 0.35);
+  }
+
+  50% {
+    box-shadow: 0 14px 30px -5px rgba(14, 75, 133, 0.42), 0 0 0 8px rgba(36, 110, 176, 0);
+  }
+}
+
+@keyframes gradientShift {
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes radarPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes subtleBounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Clases utilitarias de animación */
+.animate-page-enter {
+  animation: pageEnter 0.42s var(--ease-spring) both;
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.46s var(--ease-spring) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+.animate-modal-backdrop {
+  animation: fadeIn 0.22s ease-out both;
+}
+
+.animate-modal-pop {
+  animation: modalPop 0.32s var(--ease-spring) both;
+}
+
+.animate-drawer-right {
+  animation: drawerRight 0.36s var(--ease-spring) both;
+}
+
+.animate-drawer-left {
+  animation: drawerLeft 0.3s var(--ease-spring) both;
+}
+
+.animate-popover {
+  transform-origin: top right;
+  animation: popoverIn 0.22s var(--ease-spring) both;
+}
+
+.animate-popover-left {
+  transform-origin: top left;
+  animation: popoverIn 0.22s var(--ease-spring) both;
+}
+
+.animate-toast {
+  animation: toastSlideUp 0.32s var(--ease-spring) both;
+}
+
+.animate-msg-in {
+  animation: msgPop 0.34s var(--ease-spring) both;
+}
+
+.animate-bar-fill {
+  transform-origin: left center;
+  animation: barGrow 0.85s var(--ease-spring) both;
+  animation-delay: 140ms;
+}
+
+.animate-float-glow {
+  animation: floatGlow 3.2s ease-in-out infinite;
+}
+
+.animate-ambient-gradient {
+  background-size: 200% 200%;
+  animation: gradientShift 11s ease infinite;
+}
+
+.animate-radar-ping {
+  animation: radarPing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.animate-subtle-float {
+  animation: subtleBounce 3.6s ease-in-out infinite;
+}
+
+/* Cascada automática para grids de tarjetas */
+.stagger-grid>* {
+  animation: fadeUp 0.48s var(--ease-spring) both;
+}
+
+.stagger-grid>*:nth-child(1) {
+  animation-delay: 30ms;
+}
+
+.stagger-grid>*:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.stagger-grid>*:nth-child(3) {
+  animation-delay: 130ms;
+}
+
+.stagger-grid>*:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+.stagger-grid>*:nth-child(5) {
+  animation-delay: 230ms;
+}
+
+.stagger-grid>*:nth-child(6) {
+  animation-delay: 280ms;
+}
+
+.stagger-grid>*:nth-child(7) {
+  animation-delay: 330ms;
+}
+
+.stagger-grid>*:nth-child(8) {
+  animation-delay: 380ms;
+}
+
+.stagger-grid>*:nth-child(9) {
+  animation-delay: 420ms;
+}
+
+.stagger-grid>*:nth-child(10) {
+  animation-delay: 460ms;
+}
+
+.stagger-grid>*:nth-child(n + 11) {
+  animation-delay: 500ms;
+}
+
+/* Cascada suave para filas de tablas */
+.stagger-rows>tr {
+  animation: fadeUp 0.34s var(--ease-snap) both;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.stagger-rows>tr:nth-child(1) {
+  animation-delay: 20ms;
+}
+
+.stagger-rows>tr:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.stagger-rows>tr:nth-child(3) {
+  animation-delay: 70ms;
+}
+
+.stagger-rows>tr:nth-child(4) {
+  animation-delay: 95ms;
+}
+
+.stagger-rows>tr:nth-child(5) {
+  animation-delay: 120ms;
+}
+
+.stagger-rows>tr:nth-child(6) {
+  animation-delay: 145ms;
+}
+
+.stagger-rows>tr:nth-child(7) {
+  animation-delay: 170ms;
+}
+
+.stagger-rows>tr:nth-child(8) {
+  animation-delay: 195ms;
+}
+
+.stagger-rows>tr:nth-child(9) {
+  animation-delay: 220ms;
+}
+
+.stagger-rows>tr:nth-child(10) {
+  animation-delay: 245ms;
+}
+
+.stagger-rows>tr:nth-child(n + 11) {
+  animation-delay: 270ms;
+}
+
+/* Tarjetas interactivas con elevación y brillo refinado */
+.card-interactive {
+  transition:
+    transform 240ms var(--ease-spring),
+    box-shadow 240ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease;
+}
+
+.card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -10px rgba(15, 23, 42, 0.12), 0 4px 10px -4px rgba(29, 78, 216, 0.08);
+}
+
+.card-interactive:active {
+  transform: translateY(-1px) scale(0.992);
+}
+
+/* Superficie de panel elegante con hover sutil */
+.panel-surface {
+  transition: box-shadow 260ms ease, border-color 220ms ease;
+}
+
+.panel-surface:hover {
+  box-shadow: 0 8px 24px -12px rgba(15, 23, 42, 0.08);
+}
+
+/* Botones táctiles */
+.btn-tactile {
+  transition:
+    transform 160ms var(--ease-spring),
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.btn-tactile:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-tactile:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+/* Custom sleek scrollbars for dense fiscal tables */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+}
