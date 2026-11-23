@@ -102,7 +102,7 @@ export const EmpresasPage: React.FC = () => {
       regimen,
       regimen_descripcion: (CATALOGO_REGIMEN[regimen] || regimen).replace(/^\d+\s*-\s*/, ''),
       tipo_persona: tipoPersona,
-      codigo_postal: cp.trim() || '76125',
+      codigo_postal: cp.trim(),
     });
 
     setRfc('');
@@ -234,7 +234,33 @@ export const EmpresasPage: React.FC = () => {
       </div>
 
       {/* Vista Tarjetas */}
-      {viewMode === 'cards' ? (
+      {empresasFiltradas.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <h3 className="mt-4 text-sm font-bold text-slate-900">
+            {db.empresas.length === 0
+              ? 'Aún no hay empresas registradas'
+              : 'Sin coincidencias con los filtros actuales'}
+          </h3>
+          <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+            {db.empresas.length === 0
+              ? 'El portal se encuentra limpio y listo para recibir los RFC reales de la empresa, sus CFDIs del SAT y la vinculación con Aspel SAE.'
+              : 'Ajusta el texto de búsqueda o desactiva el filtro de favoritas.'}
+          </p>
+          {db.empresas.length === 0 && isPropietario && (
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              Registrar empresa (RFC)
+            </button>
+          )}
+        </div>
+      ) : viewMode === 'cards' ? (
         <div className="stagger-grid grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {empresasFiltradas.map((emp) => {
             const isActive = emp.id === activeEmpresa.id;
@@ -442,7 +468,7 @@ export const EmpresasPage: React.FC = () => {
                     maxLength={5}
                     value={cp}
                     onChange={(e) => setCp(e.target.value)}
-                    placeholder="76125"
+                    placeholder="5 dígitos"
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-blue-500 focus:outline-none"
                   />
                 </div>

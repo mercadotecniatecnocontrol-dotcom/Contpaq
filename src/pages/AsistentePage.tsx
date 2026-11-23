@@ -235,19 +235,25 @@ export const AsistentePage: React.FC = () => {
           className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2.5 text-xs transition-colors cursor-pointer ${
             opinionNegativa
               ? 'border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100/70'
-              : 'border-emerald-200 bg-emerald-50/70 text-emerald-950 hover:bg-emerald-100/70'
+              : opinionSat
+                ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950 hover:bg-emerald-100/70'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
           }`}
         >
           <div className="flex items-center gap-2">
             {opinionNegativa ? (
               <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-            ) : (
+            ) : opinionSat ? (
               <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            ) : (
+              <HelpCircle className="h-4 w-4 shrink-0 text-slate-400" />
             )}
             <span className="font-semibold">
               {opinionNegativa
                 ? 'Atención requerida en obligaciones fiscales | Opinión negativa SAT'
-                : 'Tus obligaciones están al día | Opinión positiva SAT'}
+                : opinionSat
+                  ? 'Tus obligaciones están al día | Opinión positiva SAT'
+                  : 'Opinión de cumplimiento SAT (32-D) pendiente de cargar'}
             </span>
           </div>
           <span className="font-bold underline">Ver detalle →</span>
@@ -276,7 +282,7 @@ export const AsistentePage: React.FC = () => {
               <ShieldCheck className="h-3 w-3" /> Solo portal
             </StatusBadge>
             <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-              {consumo?.consultas_ia_mes || 0} / {consumo?.consultas_ia_limite || 500} mes
+              {consumo?.consultas_ia_mes || 0} consulta(s) este mes
             </span>
             <button
               type="button"

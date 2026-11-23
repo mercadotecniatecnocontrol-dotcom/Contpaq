@@ -157,6 +157,32 @@ export async function handleApiRequest(
         return true;
       }
 
+      // Portal limpio sin empresas registradas aún (propietario autorizado)
+      if (fullState.empresas.length === 0 && healthSession.user.rol === 'propietario') {
+        const rawStats = backendStorage.getStorageStats();
+        sendJson(res, 200, {
+          ok: true,
+          service: 'Portal Operativo Tecnocontrol',
+          version: '2.2.0',
+          status: 'online',
+          timestamp: new Date().toISOString(),
+          storage: {
+            driver: rawStats.driver,
+            dbPath: 'almacenamiento-servidor',
+            fileSizeBytes: rawStats.fileSizeBytes,
+            lastModified: rawStats.lastModified,
+            totalCfdis: 0,
+            totalEmpresas: 0,
+          },
+          vault: {
+            configuredInVault: false,
+            algoritmo: 'AES-256-GCM',
+            kdf: 'PBKDF2-SHA512-100000',
+          },
+        });
+        return true;
+      }
+
       const access = resolveAuthorizedTargetEmpresa(
         fullState,
         healthSession.user,
@@ -419,14 +445,14 @@ export async function handleApiRequest(
       return true;
     }
 
-    // 4. POST /api/reset — Restaurar datos iniciales (únicamente propietario global de todas las empresas)
+    // 4. POST /api/reset — Limpiar base fiscal (únicamente propietario global)
     if (method === 'POST' && pathname === '/api/reset') {
       const currentState = backendStorage.loadState();
       const roleMap = getAuthorizedEmpresaRoles(currentState, sessionUser.correo);
       const isGlobalOwner =
         sessionUser.rol === 'propietario' &&
-        currentState.empresas.length > 0 &&
-        currentState.empresas.every((e) => roleMap.get(e.id) === 'propietario');
+        (currentState.empresas.length === 0 ||
+          currentState.empresas.every((e) => roleMap.get(e.id) === 'propietario'));
 
       if (!isGlobalOwner) {
         sendJson(res, 403, {

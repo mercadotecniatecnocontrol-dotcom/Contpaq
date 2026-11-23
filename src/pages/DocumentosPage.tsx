@@ -52,7 +52,7 @@ export const DocumentosPage: React.FC = () => {
     setSelectedTipo(tipo);
     const existing = docsEmpresa.find((d) => d.tipo === tipo);
     setSentido(tipo === 'constancia' ? 'vigente' : existing?.sentido || 'positiva');
-    setFolio(existing?.folio_documento || `26ND${Math.floor(10000000 + Math.random() * 89999999)}`);
+    setFolio(existing?.folio_documento || '');
     setNotas(existing?.notas || '');
     setPdfFile(null);
     setUploadOpen(true);

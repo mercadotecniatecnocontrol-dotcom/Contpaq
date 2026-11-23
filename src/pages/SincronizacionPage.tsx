@@ -9,7 +9,6 @@ import {
   FileArchive,
   History,
   RefreshCw,
-  RotateCcw,
   RotateCw,
   Upload,
   X,
@@ -37,9 +36,9 @@ export const SincronizacionPage: React.FC = () => {
     triggerHistoricalSync,
     importManualCfdis,
     clearEmpresaCfdis,
-    resetDemoData,
     addEmpresa,
     selectEmpresa,
+    navigate,
     showToast,
   } = useFiscal();
 
@@ -162,92 +161,10 @@ export const SincronizacionPage: React.FC = () => {
           '',
         ),
         tipo_persona: sug.rfc.length === 13 ? 'fisica' : 'moral',
-        codigo_postal: '76125',
+        codigo_postal: '',
       });
 
     await runBatchOnXmlTexts(summary.rawXmlTexts, target, `Carga ZIP SAT (${target.rfc})`);
-  };
-
-  // Paquete de muestra completo: Ingreso PPD + Complemento Pagos 2.0 + Nómina 1.2 + Carta Porte 3.1
-  const handleLoadCompleteSamplePack = async () => {
-    const rand = Math.floor(100000 + Math.random() * 899999);
-    const uuidPpd = `A1B2C3D4-1111-4AAA-9BBB-${String(rand).padStart(12, '0')}`;
-    const uuidRep = `E5F6A7B8-2222-4CCC-9DDD-${String(rand + 1).padStart(12, '0')}`;
-    const uuidNom = `C9D0E1F2-3333-4EEE-9FFF-${String(rand + 2).padStart(12, '0')}`;
-    const uuidCp = `778899AA-4444-4123-9456-${String(rand + 3).padStart(12, '0')}`;
-
-    const xmlPpd = `<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="ZIP" Folio="${rand % 1000}" Fecha="2026-11-18T10:00:00" FormaPago="99" SubTotal="50000.00" Moneda="MXN" Total="58000.00" TipoDeComprobante="I" MetodoPago="PPD">
-  <cfdi:Emisor Rfc="${activeEmpresa.rfc}" Nombre="${activeEmpresa.razon_social}" RegimenFiscal="${activeEmpresa.regimen}" />
-  <cfdi:Receptor Rfc="GIM980412AB3" Nombre="GRUPO INDUSTRIAL MONTERREY S.A. DE C.V." RegimenFiscalReceptor="601" UsoCFDI="G03" />
-  <cfdi:Conceptos>
-    <cfdi:Concepto ClaveProdServ="81101701" Cantidad="1" ClaveUnidad="E48" Descripcion="Calibración de sensores y mantenimiento PLC (Muestra ZIP)" ValorUnitario="50000.00" Importe="50000.00" ObjetoImp="02" />
-  </cfdi:Conceptos>
-  <cfdi:Impuestos TotalImpuestosTrasladados="8000.00">
-    <cfdi:Traslados><cfdi:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="8000.00" /></cfdi:Traslados>
-  </cfdi:Impuestos>
-  <cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="${uuidPpd}" FechaTimbrado="2026-11-18T10:00:10" /></cfdi:Complemento>
-</cfdi:Comprobante>`;
-
-    const xmlRep = `<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:pago20="http://www.sat.gob.mx/Pagos20" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="REPZ" Folio="${(rand + 1) % 1000}" Fecha="2026-11-19T09:30:00" SubTotal="0" Moneda="XXX" Total="0" TipoDeComprobante="P">
-  <cfdi:Emisor Rfc="${activeEmpresa.rfc}" Nombre="${activeEmpresa.razon_social}" RegimenFiscal="${activeEmpresa.regimen}" />
-  <cfdi:Receptor Rfc="GIM980412AB3" Nombre="GRUPO INDUSTRIAL MONTERREY S.A. DE C.V." RegimenFiscalReceptor="601" UsoCFDI="CP01" />
-  <cfdi:Conceptos><cfdi:Concepto ClaveProdServ="84111506" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago" ValorUnitario="0" Importe="0" ObjetoImp="01" /></cfdi:Conceptos>
-  <cfdi:Complemento>
-    <pago20:Pagos Version="2.0">
-      <pago20:Totales MontoTotalPagos="29000.00" />
-      <pago20:Pago FechaPago="2026-11-19T09:00:00" FormaDePagoP="03" MonedaP="MXN" Monto="29000.00">
-        <pago20:DoctoRelacionado IdDocumento="${uuidPpd}" MonedaDR="MXN" EquivalenciaDR="1" NumParcialidad="1" ImpSaldoAnt="58000.00" ImpPagado="29000.00" ImpSaldoInsoluto="29000.00" />
-      </pago20:Pago>
-    </pago20:Pagos>
-    <tfd:TimbreFiscalDigital Version="1.1" UUID="${uuidRep}" FechaTimbrado="2026-11-19T09:30:09" />
-  </cfdi:Complemento>
-</cfdi:Comprobante>`;
-
-    const xmlNomina = `<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:nomina12="http://www.sat.gob.mx/nomina12" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="NOMZ" Folio="${(rand + 2) % 1000}" Fecha="2026-11-15T16:00:00" SubTotal="24000.00" Descuento="3250.00" Moneda="MXN" Total="20750.00" TipoDeComprobante="N" MetodoPago="PUE">
-  <cfdi:Emisor Rfc="${activeEmpresa.rfc}" Nombre="${activeEmpresa.razon_social}" RegimenFiscal="${activeEmpresa.regimen}" />
-  <cfdi:Receptor Rfc="MECN900514AB2" Nombre="NAYRA MENDOZA CASTILLO" RegimenFiscalReceptor="605" UsoCFDI="CN01" />
-  <cfdi:Conceptos><cfdi:Concepto ClaveProdServ="84111505" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago de nómina quincenal" ValorUnitario="24000.00" Importe="24000.00" ObjetoImp="01" /></cfdi:Conceptos>
-  <cfdi:Complemento>
-    <nomina12:Nomina Version="1.2" TipoNomina="O" FechaPago="2026-11-15" FechaInicialPago="2026-11-01" FechaFinalPago="2026-11-15" NumDiasPagados="15" TotalPercepciones="24000.00" TotalDeducciones="3250.00" TotalOtrosPagos="0.00">
-      <nomina12:Receptor Curp="MECN900514MQRN01" NumEmpleado="014" Puesto="Contadora General" Departamento="Contabilidad" />
-      <nomina12:Deducciones TotalOtrasDeducciones="650.00" TotalImpuestosRetenidos="2600.00">
-        <nomina12:Deduccion TipoDeduccion="002" Clave="002" Concepto="ISR" Importe="2600.00" />
-      </nomina12:Deducciones>
-    </nomina12:Nomina>
-    <tfd:TimbreFiscalDigital Version="1.1" UUID="${uuidNom}" FechaTimbrado="2026-11-15T16:00:12" />
-  </cfdi:Complemento>
-</cfdi:Comprobante>`;
-
-    const xmlCartaPorte = `<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:cartaporte31="http://www.sat.gob.mx/CartaPorte31" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="CPZ" Folio="${(rand + 3) % 1000}" Fecha="2026-11-18T08:00:00" SubTotal="0" Moneda="XXX" Total="0" TipoDeComprobante="T">
-  <cfdi:Emisor Rfc="${activeEmpresa.rfc}" Nombre="${activeEmpresa.razon_social}" RegimenFiscal="${activeEmpresa.regimen}" />
-  <cfdi:Receptor Rfc="GIM980412AB3" Nombre="GRUPO INDUSTRIAL MONTERREY S.A. DE C.V." RegimenFiscalReceptor="601" UsoCFDI="S01" />
-  <cfdi:Conceptos><cfdi:Concepto ClaveProdServ="39121104" Cantidad="1" ClaveUnidad="H87" Descripcion="Traslado de tablero eléctrico industrial" ValorUnitario="0" Importe="0" ObjetoImp="01" /></cfdi:Conceptos>
-  <cfdi:Complemento>
-    <cartaporte31:CartaPorte Version="3.1" TranspInternac="No" TotalDistRec="715">
-      <cartaporte31:Ubicaciones>
-        <cartaporte31:Ubicacion TipoUbicacion="Origen"><cartaporte31:Domicilio Municipio="Querétaro" Estado="QUE" CodigoPostal="76125" /></cartaporte31:Ubicacion>
-        <cartaporte31:Ubicacion TipoUbicacion="Destino"><cartaporte31:Domicilio Municipio="Monterrey" Estado="NLE" CodigoPostal="64000" /></cartaporte31:Ubicacion>
-      </cartaporte31:Ubicaciones>
-      <cartaporte31:Mercancias PesoBrutoTotal="480" UnidadPeso="KGM" NumTotalMercancias="3" />
-    </cartaporte31:CartaPorte>
-    <tfd:TimbreFiscalDigital Version="1.1" UUID="${uuidCp}" FechaTimbrado="2026-11-18T08:00:08" />
-  </cfdi:Complemento>
-</cfdi:Comprobante>`;
-
-    await runBatchOnXmlTexts(
-      [
-        { name: 'paquete_muestra.zip/ingreso_ppd.xml', xml: xmlPpd },
-        { name: 'paquete_muestra.zip/pago_rep20.xml', xml: xmlRep },
-        { name: 'paquete_muestra.zip/nomina_12.xml', xml: xmlNomina },
-        { name: 'paquete_muestra.zip/traslado_cartaporte31.xml', xml: xmlCartaPorte },
-      ],
-      activeEmpresa,
-      'Paquete muestra (PPD + REP 2.0 + Nómina 1.2 + Carta Porte)',
-    );
   };
 
   const toggleYear = (y: number) => {
@@ -325,16 +242,33 @@ export const SincronizacionPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Aviso si la empresa está en modo limpio (0 CFDIs) */}
-      {companyCfdiCount === 0 && (
+      {/* Aviso si no hay empresa registrada o no hay CFDIs aún */}
+      {!activeEmpresa.id ? (
+        <div className="animate-fade-up flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs text-blue-950">
+            <p className="font-bold">Aún no hay una empresa (RFC) registrada</p>
+            <p className="mt-0.5 text-blue-800">
+              Registra primero tu empresa real en el apartado <strong>Empresas (RFC)</strong> para
+              poder cargar tus archivos <strong>.zip</strong> o <strong>.xml</strong> del SAT.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('empresas')}
+            className="btn-tactile rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+          >
+            Registrar empresa (RFC)
+          </button>
+        </div>
+      ) : companyCfdiCount === 0 ? (
         <div className="animate-fade-up flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-blue-950">
             <p className="font-bold">
-              Modo empresa limpia activo para {activeEmpresa.razon_social} ({activeEmpresa.rfc})
+              Sin comprobantes cargados para {activeEmpresa.razon_social} ({activeEmpresa.rfc})
             </p>
             <p className="mt-0.5 text-blue-800">
               Arrastra un archivo <strong>.zip</strong> o archivos <strong>.xml</strong> descargados
-              del SAT para ver tus datos reales en Dashboard, IVA, ISR y los 13 indicadores.
+              del SAT para ver tus datos reales en Dashboard, IVA, ISR y los indicadores.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -348,17 +282,9 @@ export const SincronizacionPage: React.FC = () => {
             >
               Subir ZIP / XML ahora
             </button>
-            <button
-              type="button"
-              onClick={resetDemoData}
-              className="btn-tactile inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 cursor-pointer"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Restaurar demo
-            </button>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Barra de estado de última consulta */}
       <div className="stagger-grid grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -627,24 +553,6 @@ export const SincronizacionPage: React.FC = () => {
                   </div>
                 </div>
               )}
-
-              {/* Botón de prueba rápida con los 4 tipos reales */}
-              <div className="flex flex-col items-start justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3.5 py-3 sm:flex-row sm:items-center">
-                <div className="text-blue-950">
-                  <p className="font-semibold">¿Quieres probar Pagos 2.0, Nómina 1.2 y Carta Porte?</p>
-                  <p className="text-[11px] text-blue-800">
-                    Carga un lote de muestra con 4 XMLs completos vinculados a {activeEmpresa.rfc}.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={handleLoadCompleteSamplePack}
-                  className="btn-tactile shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
-                >
-                  Probar paquete completo
-                </button>
-              </div>
 
               {/* Resumen del lote procesado */}
               {summary && (

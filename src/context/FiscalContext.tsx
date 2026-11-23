@@ -91,10 +91,10 @@ export const ROLE_PROFILES: Record<RolEmpresa, SimulatedUserProfile> = {
 
 const EMPTY_EMPRESA: Empresa = {
   id: '',
-  rfc: '',
-  razon_social: '',
-  regimen: '',
-  regimen_descripcion: '',
+  rfc: 'Sin RFC',
+  razon_social: 'Sin empresa registrada',
+  regimen: '—',
+  regimen_descripcion: 'Pendiente de registro',
   tipo_persona: 'moral',
   favorita: false,
   ultimo_acceso: '',
@@ -707,12 +707,12 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           {
             empresa_id: id,
             cfdi_historicos: 0,
-            cfdi_ejercicio_limite: 5000,
+            cfdi_ejercicio_limite: 0,
             consultas_ia_mes: 0,
-            consultas_ia_limite: 250,
+            consultas_ia_limite: 0,
             almacenamiento_mb: 0,
-            almacenamiento_limite_mb: 1024,
-            desglose_anual: [{ anio: '2026', cantidad: 0 }],
+            almacenamiento_limite_mb: 0,
+            desglose_anual: [],
           },
         ],
         bitacora: addBitacora(
@@ -902,118 +902,57 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 
   const triggerSyncNow = useCallback(() => {
+    if (!activeEmpresa.id) {
+      showToast('Registra primero una empresa (RFC) antes de sincronizar con el SAT');
+      return;
+    }
     const actor = {
       rol: currentUser.rol,
       usuario: currentUser.nombre,
       empresaId: activeEmpresa.id,
     };
-    showToast('Sincronizando comprobantes con el SAT...');
+    showToast('Consultando sincronización SAT...');
     void fiscalRepository.triggerBackendSatSync(activeEmpresa.id, actor).then((res) => {
       if (res.ok && res.state) {
         setDb(res.state);
-        showToast('Sincronización con el SAT completada correctamente');
+        showToast('Sincronización registrada (sin comprobantes simulados)');
         return;
       }
-      // Fallback local si se corre sin servidor Node
-      const newId = `desc-${Date.now()}`;
-      const solId = `${crypto.randomUUID ? crypto.randomUUID().toUpperCase() : `SAT-${Date.now()}`}`;
-      const pendingRow: DescargaSat = {
-        id: newId,
-        empresa_id: activeEmpresa.id,
-        periodo: '19 nov 2026 (Bajo demanda)',
-        tipo: 'ambos',
-        formato: 'xml',
-        fecha_ini: '2026-11-19',
-        fecha_fin: '2026-11-19',
-        id_solicitud_sat: solId,
-        estado: 'Completada',
-        cfdi_emitidos: 2,
-        cfdi_recibidos: 3,
-        inicio: new Date().toISOString(),
-        fin: new Date().toISOString(),
-        error: null,
-      };
-      updateDb((prev) => ({
-        ...prev,
-        descargas: [pendingRow, ...prev.descargas],
-      }));
-      showToast('Descarga SAT completada: 2 emitidos y 3 recibidos sin duplicados');
+      showToast('No fue posible conectar con el servicio SAT. Sube tus archivos XML/ZIP reales.');
     });
-  }, [activeEmpresa.id, currentUser.nombre, currentUser.rol, showToast, updateDb]);
+  }, [activeEmpresa.id, currentUser.nombre, currentUser.rol, showToast]);
 
   const retrySyncRow = useCallback(
-    (descargaId: string) => {
-      updateDb((prev) => ({
-        ...prev,
-        descargas: prev.descargas.map((d) =>
-          d.id === descargaId
-            ? { ...d, estado: 'Procesando', error: null, inicio: new Date().toISOString(), fin: null }
-            : d,
-        ),
-      }));
-      showToast('Reintentando descarga ante el SAT...');
-      window.setTimeout(() => {
-        updateDb((prev) => ({
-          ...prev,
-          descargas: prev.descargas.map((d) =>
-            d.id === descargaId
-              ? {
-                  ...d,
-                  estado: 'Completada',
-                  cfdi_emitidos: d.tipo === 'recibidos' ? 0 : 3,
-                  cfdi_recibidos: 4,
-                  fin: new Date().toISOString(),
-                  error: null,
-                }
-              : d,
-          ),
-        }));
-        showToast('Reintento completado exitosamente');
-      }, 1500);
+    (_descargaId: string) => {
+      showToast('El reintento automático se activará al conectar la e.firma real con el SAT');
     },
-    [showToast, updateDb],
+    [showToast],
   );
 
   const triggerHistoricalSync = useCallback(
     (years: number[]) => {
-      if (years.length === 0) return;
-      const nowIso = new Date().toISOString();
-      const created: DescargaSat[] = [];
-      for (const y of years) {
-        const months = y === 2026 ? 11 : 12;
-        for (let m = months; m >= 1; m--) {
-          const mm = String(m).padStart(2, '0');
-          created.push({
-            id: `desc-hist-${y}-${mm}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-            empresa_id: activeEmpresa.id,
-            periodo: `Histórico ${y}-${mm}`,
-            tipo: 'ambos',
-            formato: 'xml',
-            fecha_ini: `${y}-${mm}-01`,
-            fecha_fin: `${y}-${mm}-28`,
-            id_solicitud_sat: `HIST-${y}${mm}-${Math.floor(100000 + Math.random() * 899999)}`,
-            estado: 'Completada',
-            cfdi_emitidos: 8 + (m % 6),
-            cfdi_recibidos: 12 + (m % 8),
-            inicio: nowIso,
-            fin: nowIso,
-            error: null,
-          });
-        }
+      if (!activeEmpresa.id) {
+        showToast('Registra primero una empresa (RFC) para programar descargas históricas');
+        return;
       }
-      updateDb((prev) => ({
-        ...prev,
-        descargas: [...created, ...prev.descargas],
-        bitacora: addBitacora(
-          prev,
-          'Descarga histórica SAT',
-          'Sincronización',
-          `Se generaron ${created.length} solicitudes mensuales para los años: ${years.join(', ')}.`,
-        ),
-      }));
-      showToast(`Descarga histórica dividida en ${created.length} solicitudes mensuales`);
+      if (years.length === 0) return;
+      const actor = {
+        rol: currentUser.rol,
+        usuario: currentUser.nombre,
+        empresaId: activeEmpresa.id,
+      };
+      void fiscalRepository.triggerBackendHistoricalSat(activeEmpresa.id, years, actor).then((res) => {
+        if (res.ok && res.state) {
+          setDb(res.state);
+          showToast(
+            `Solicitud histórica registrada para ${years.join(', ')} (pendiente de archivos reales del SAT)`,
+          );
+          return;
+        }
+        showToast('No fue posible registrar la solicitud histórica en el servidor');
+      });
     },
-    [activeEmpresa, showToast, updateDb],
+    [activeEmpresa.id, currentUser.nombre, currentUser.rol, showToast],
   );
 
   const importManualCfdis = useCallback(
@@ -1307,61 +1246,13 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [activeEmpresa, updateDb]);
 
   const syncAspelNow = useCallback(() => {
-    updateDb((prev) => {
-      const cfg = prev.aspel_configs.find((c) => c.empresa_id === activeEmpresa.id);
-      if (!cfg?.conectado) return prev;
-      let syncedCount = 0;
-      const nextCfdis = prev.cfdis.map((c) => {
-        if (
-          c.empresa_id === activeEmpresa.id &&
-          !c.solo_en_sat &&
-          c.estatus_contable === 'pendiente'
-        ) {
-          syncedCount++;
-          return {
-            ...c,
-            estatus_contable: 'con_poliza' as const,
-            poliza_aspel: `${c.direccion === 'E' ? 'IG' : 'EG'}-2026-11-${String(100 + syncedCount).padStart(4, '0')}`,
-            fecha_poliza: '2026-11-19',
-            cuenta_contable: c.direccion === 'E' ? '4100-001-000' : '5100-001-000',
-          };
-        }
-        return c;
-      });
-
-      const newLog = {
-        id: `add-${Date.now()}`,
-        empresa_id: activeEmpresa.id,
-        empresa_nombre: activeEmpresa.razon_social,
-        guid: `SAE-${activeEmpresa.rfc.slice(0, 4)}-${Date.now().toString().slice(-6)}`,
-        fecha: new Date().toISOString(),
-        rango_inicio: '2026-11-01',
-        rango_fin: '2026-11-19',
-        direccion: 'Ambos' as const,
-        total_sincronizados: syncedCount,
-        estatus: 'Completada' as const,
-        sistema: 'Aspel SAE' as const,
-      };
-
-      return {
-        ...prev,
-        cfdis: nextCfdis,
-        contable_logs: [newLog, ...prev.contable_logs],
-        aspel_configs: prev.aspel_configs.map((item) =>
-          item.empresa_id === activeEmpresa.id
-            ? { ...item, ultima_sincronizacion: new Date().toISOString() }
-            : item,
-        ),
-        bitacora: addBitacora(
-          prev,
-          'Sincronización contable Aspel SAE',
-          'Vinculaciones',
-          `Se vincularon ${syncedCount} pólizas desde Aspel SAE (GUID ${newLog.guid}).`,
-        ),
-      };
-    });
-    showToast('Sincronización con Aspel SAE completada');
-  }, [activeEmpresa, showToast, updateDb]);
+    const cfg = db.aspel_configs.find((c) => c.empresa_id === activeEmpresa.id);
+    if (!activeEmpresa.id || !cfg?.conectado) {
+      showToast('Configura primero los datos reales de conexión de Aspel SAE');
+      return;
+    }
+    showToast('Sin registros nuevos pendientes de sincronizar con Aspel SAE');
+  }, [activeEmpresa.id, db.aspel_configs, showToast]);
 
   const assignPolizaAspel = useCallback(
     (uuid: string, poliza: string, cuenta: string) => {

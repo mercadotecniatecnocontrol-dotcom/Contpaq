@@ -77,7 +77,21 @@ export const ContablePage: React.FC = () => {
         </div>
 
         {/* Estado de conexión con Aspel SAE */}
-        {aspelConfig && !aspelConfig.conectado ? (
+        {!aspelConfig ? (
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3 text-xs text-slate-700">
+              <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
+              <div>
+                <p className="font-bold text-slate-900">Conexión con Aspel SAE pendiente de configurar</p>
+                <p className="mt-0.5 text-slate-500">
+                  Registra una empresa y proporciona los datos de conexión de Aspel SAE para iniciar
+                  la sincronización real.
+                </p>
+              </div>
+            </div>
+            <StatusBadge variant="neutral">Sin configurar</StatusBadge>
+          </div>
+        ) : !aspelConfig.conectado ? (
           <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3 text-xs text-rose-900">
               <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />

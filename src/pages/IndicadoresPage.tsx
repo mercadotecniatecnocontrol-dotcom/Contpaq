@@ -1212,7 +1212,7 @@ export const IndicadoresPage: React.FC = () => {
                       onClick={() =>
                         setFiltros((prev) => [
                           ...prev,
-                          { campo: 'total_mxn', operador: 'gt', valor: '10000' },
+                          { campo: 'total_mxn', operador: 'gt', valor: '' },
                         ])
                       }
                       className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline cursor-pointer"

@@ -139,18 +139,22 @@ export const VinculacionesPage: React.FC = () => {
         {/* Tarjeta de estado de conexión Aspel SAE */}
         <div
           className={`rounded-2xl border p-5 ${
-            aspelConfig?.conectado
+            !aspelConfig
               ? 'border-slate-200 bg-white'
-              : 'border-rose-200 bg-rose-50'
+              : aspelConfig.conectado
+                ? 'border-slate-200 bg-white'
+                : 'border-rose-200 bg-rose-50'
           }`}
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <div
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                  aspelConfig?.conectado
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'bg-rose-100 text-rose-700'
+                  !aspelConfig
+                    ? 'bg-slate-100 text-slate-500'
+                    : aspelConfig.conectado
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'bg-rose-100 text-rose-700'
                 }`}
               >
                 {aspelConfig?.conectado ? (
@@ -164,11 +168,20 @@ export const VinculacionesPage: React.FC = () => {
                   <h2 className="text-sm font-bold text-slate-900">
                     Conector Aspel SAE — {activeEmpresa.razon_social}
                   </h2>
-                  <StatusBadge variant={aspelConfig?.conectado ? 'success' : 'danger'} dot pulse>
-                    {aspelConfig?.conectado ? 'Conectado' : 'Sin conexión'}
-                  </StatusBadge>
+                  {!aspelConfig ? (
+                    <StatusBadge variant="neutral">Pendiente de configurar</StatusBadge>
+                  ) : (
+                    <StatusBadge variant={aspelConfig.conectado ? 'success' : 'danger'} dot pulse>
+                      {aspelConfig.conectado ? 'Conectado' : 'Sin conexión'}
+                    </StatusBadge>
+                  )}
                 </div>
-                {aspelConfig?.conectado ? (
+                {!aspelConfig ? (
+                  <p className="mt-1 text-slate-500">
+                    Registra una empresa y proporciona los datos de acceso de Aspel SAE para activar
+                    la vinculación real de documentos y pagos.
+                  </p>
+                ) : aspelConfig.conectado ? (
                   <p className="mt-1 text-slate-600">
                     Servidor <span className="font-mono-code">{aspelConfig.servidor}</span> · Base{' '}
                     <span className="font-mono-code">{aspelConfig.base_datos}</span> · Última sync:{' '}
@@ -176,16 +189,16 @@ export const VinculacionesPage: React.FC = () => {
                   </p>
                 ) : (
                   <p className="mt-1 font-medium text-rose-800">
-                    {aspelConfig?.error_conexion ||
+                    {aspelConfig.error_conexion ||
                       'No hay conexión activa con el servicio de Aspel SAE.'}
                   </p>
                 )}
               </div>
             </div>
 
-            {!isReadOnly && (
+            {!isReadOnly && aspelConfig && (
               <div className="flex items-center gap-2">
-                {aspelConfig?.conectado ? (
+                {aspelConfig.conectado ? (
                   <button
                     type="button"
                     onClick={() => {

@@ -196,7 +196,15 @@ export function mergeScopedStateUpdate(
     }
   }
 
-  if (writableIds.size === 0) {
+  const existingEmpresaIds = new Set(currentState.empresas.map((e) => e.id));
+  const incomingEmpresas = Array.isArray(incoming.empresas) ? incoming.empresas : [];
+  const newEmpresas = incomingEmpresas.filter((e) => e && e.id && !existingEmpresaIds.has(e.id));
+
+  // Permitir al propietario registrar la primera empresa real cuando el portal inicia limpio (0 empresas)
+  const canBootstrapFirstCompany =
+    currentState.empresas.length === 0 && user.rol === 'propietario' && newEmpresas.length > 0;
+
+  if (writableIds.size === 0 && !canBootstrapFirstCompany) {
     return {
       ok: false,
       statusCode: 403,
@@ -204,11 +212,7 @@ export function mergeScopedStateUpdate(
     };
   }
 
-  const existingEmpresaIds = new Set(currentState.empresas.map((e) => e.id));
-  const incomingEmpresas = Array.isArray(incoming.empresas) ? incoming.empresas : [];
-  const newEmpresas = incomingEmpresas.filter((e) => e && e.id && !existingEmpresaIds.has(e.id));
-
-  if (newEmpresas.length > 0 && ownerIds.size === 0) {
+  if (newEmpresas.length > 0 && ownerIds.size === 0 && !canBootstrapFirstCompany) {
     return {
       ok: false,
       statusCode: 403,
@@ -276,7 +280,7 @@ export function mergeScopedStateUpdate(
   );
   // Evitar que un rol no-propietario borre una empresa existente
   const finalWritableEmpresas =
-    ownerIds.size > 0
+    ownerIds.size > 0 || canBootstrapFirstCompany
       ? incomingWritableEmpresas
       : currentState.empresas
           .filter((e) => writableIds.has(e.id))

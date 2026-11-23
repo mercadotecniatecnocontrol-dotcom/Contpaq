@@ -1215,16 +1215,7 @@ export function getCedulaIsrPeriodo(
   const nominasMes = mesVigentes.filter((c) => c.direccion === 'E' && c.tipo === 'N');
   const retSueldos = Number(
     nominasMes
-      .reduce(
-        (s, c) =>
-          s +
-          (c.isr_retenido > 0
-            ? c.isr_retenido
-            : c.nomina_info
-              ? Number((c.nomina_info.total_deducciones * 0.8).toFixed(2))
-              : 0),
-        0,
-      )
+      .reduce((s, c) => s + (c.isr_retenido > 0 ? c.isr_retenido : 0), 0)
       .toFixed(2),
   );
 
@@ -1412,10 +1403,12 @@ export function getIndicadoresFinancieros(
       0,
     );
     const sueldosNetos = Number((percepciones - deducciones + otrosPagos).toFixed(2));
-    const empleados =
-      nominas.length > 0
-        ? Math.max(nominas.length * 14, Math.round(percepciones / 18500))
-        : 0;
+    const empleadosSet = new Set(
+      nominas
+        .map((c) => c.nomina_info?.curp || c.nomina_info?.num_empleado || c.rfc_receptor)
+        .filter(Boolean),
+    );
+    const empleados = empleadosSet.size;
 
     return {
       ventasBrutas: Number(ventasBrutas.toFixed(2)),
@@ -1513,7 +1506,7 @@ export function getIndicadoresFinancieros(
 
   // Antigüedad de saldos (Cuentas por cobrar y Cuentas por pagar)
   const buildAging = (dir: 'E' | 'R', onlyMonth: boolean): AgingSaldos => {
-    const refDate = new Date('2026-11-19T12:00:00');
+    const refDate = new Date();
     const ppdList = cfdis.filter(
       (c) =>
         c.direccion === dir &&
@@ -1765,19 +1758,19 @@ export function getVisorSatAuditoria(
   ];
 
   const [yStr, mStr] = periodo.split('-');
-  const mNum = parseInt(mStr || '10', 10);
+  const mNum = parseInt(mStr || '1', 10);
   const nextMonth = mNum === 12 ? 1 : mNum + 1;
   const nextYear = mNum === 12 ? parseInt(yStr, 10) + 1 : parseInt(yStr, 10);
-  const fechaPres = `17/${String(nextMonth).padStart(2, '0')}/${nextYear}`;
-  const presentada = periodo <= '2026-10';
+  const fechaLimite = `17/${String(nextMonth).padStart(2, '0')}/${nextYear}`;
+  const hasPeriodData = allPeriodCfdis.length > 0;
 
   return {
     declaracion: {
-      presentada,
-      fechaPresentacion: fechaPres,
-      mensaje: presentada
-        ? `Declaración del período presentada · Fecha de presentación: ${fechaPres}`
-        : `Período en pre-determinación · Fecha límite de presentación: ${fechaPres}`,
+      presentada: false,
+      fechaPresentacion: hasPeriodData ? fechaLimite : '—',
+      mensaje: hasPeriodData
+        ? `Período en pre-determinación · Fecha límite SAT: ${fechaLimite}`
+        : 'Sin comprobantes ni información SAT cargada para este período',
     },
     ingresosNominales: {
       pagosProvisionalesSat,

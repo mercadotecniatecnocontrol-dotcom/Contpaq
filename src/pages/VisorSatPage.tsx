@@ -170,12 +170,26 @@ export const VisorSatPage: React.FC = () => {
         </div>
 
         {/* Banner de estatus de Declaración del Período + Corte SAT */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-950 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className={`flex flex-col gap-3 rounded-2xl border px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between ${
+            auditoria.declaracion.presentada
+              ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950'
+              : 'border-slate-200 bg-white text-slate-700'
+          }`}
+        >
           <div className="flex items-center gap-2.5">
-            <FileCheck2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <FileCheck2
+              className={`h-4 w-4 shrink-0 ${
+                auditoria.declaracion.presentada ? 'text-emerald-600' : 'text-slate-400'
+              }`}
+            />
             <span className="font-semibold">{auditoria.declaracion.mensaje}</span>
           </div>
-          <span className="text-[11px] font-medium text-emerald-800">
+          <span
+            className={`text-[11px] font-medium ${
+              auditoria.declaracion.presentada ? 'text-emerald-800' : 'text-slate-500'
+            }`}
+          >
             Sincronizado con el SAT: {formatDateTime(db.fecha_corte_sat)}
           </span>
         </div>
@@ -189,10 +203,11 @@ export const VisorSatPage: React.FC = () => {
                 Fecha de corte de información SAT: {formatDateTime(db.fecha_corte_sat)}
               </p>
               <p className="mt-0.5 text-blue-800">
-                Los totales SAT provienen de la solicitud de metadatos.{' '}
-                {totalDiffCount === 0
-                  ? 'Este periodo cuadra con diferencia 0.'
-                  : `Se detectaron ${totalDiffCount} comprobante(s) con diferencia pendiente de descarga.`}
+                {conciliacion.detalle.length === 0
+                  ? 'Aún no hay comprobantes ni metadatos del SAT cargados en este periodo.'
+                  : totalDiffCount === 0
+                    ? 'Los totales SAT coinciden con los comprobantes cargados (diferencia 0).'
+                    : `Se detectaron ${totalDiffCount} comprobante(s) con diferencia pendiente de descarga.`}
               </p>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Database, Download, HardDrive, Layers, Sparkles } from 'lucide-react';
 import {
   Bar,
@@ -18,46 +18,51 @@ import { AnimatedNumber } from '../components/shared/AnimatedNumber';
 export const ConsumoPage: React.FC = () => {
   const { db, activeEmpresa } = useFiscal();
 
-  const consumo =
-    db.consumos.find((c) => c.empresa_id === activeEmpresa.id) || {
-      empresa_id: activeEmpresa.id,
-      cfdi_historicos: 0,
-      cfdi_ejercicio_limite: 5000,
-      consultas_ia_mes: 0,
-      consultas_ia_limite: 250,
-      almacenamiento_mb: 0,
-      almacenamiento_limite_mb: 1024,
-      desglose_anual: [{ anio: '2026', cantidad: 0 }],
-    };
+  const currentYear = String(new Date().getFullYear());
+  const currentMonthLabel = new Intl.DateTimeFormat('es-MX', {
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date());
 
-  const cfdiEjercicioActual =
-    (consumo.desglose_anual.find((a) => a.anio === '2026')?.cantidad || 0) +
-    db.cfdis.filter((c) => c.empresa_id === activeEmpresa.id && !c.solo_en_sat).length;
+  const consumo = db.consumos.find((c) => c.empresa_id === activeEmpresa.id);
 
-  const pctEjercicio = Math.min(
-    100,
-    Math.round((cfdiEjercicioActual / Math.max(1, consumo.cfdi_ejercicio_limite)) * 100),
+  const companyCfdis = useMemo(
+    () => db.cfdis.filter((c) => c.empresa_id === activeEmpresa.id && !c.solo_en_sat),
+    [db.cfdis, activeEmpresa.id],
   );
-  const pctIa = Math.min(
-    100,
-    Math.round((consumo.consultas_ia_mes / Math.max(1, consumo.consultas_ia_limite)) * 100),
-  );
-  const pctStorage = Math.min(
-    100,
-    Math.round((consumo.almacenamiento_mb / Math.max(1, consumo.almacenamiento_limite_mb)) * 100),
-  );
+
+  const cfdiHistoricos = companyCfdis.length;
+  const cfdiEjercicioActual = companyCfdis.filter((c) =>
+    c.fecha_fiscal.startsWith(currentYear),
+  ).length;
+  const consultasIaMes = consumo?.consultas_ia_mes || 0;
+  const almacenamientoMb = consumo?.almacenamiento_mb || 0;
+
+  const desgloseAnual = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of companyCfdis) {
+      const y = c.fecha_fiscal?.slice(0, 4);
+      if (y && /^\d{4}$/.test(y)) {
+        counts.set(y, (counts.get(y) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([anio, cantidad]) => ({ anio, cantidad }));
+  }, [companyCfdis]);
 
   const handleExport = () => {
     exportToExcel(
       db.empresas.map((emp) => {
         const c = db.consumos.find((x) => x.empresa_id === emp.id);
+        const empCfdiCount = db.cfdis.filter(
+          (item) => item.empresa_id === emp.id && !item.solo_en_sat,
+        ).length;
         return {
           Empresa: emp.razon_social,
           RFC: emp.rfc,
-          'CFDI Históricos': c?.cfdi_historicos || 0,
-          'Límite Ejercicio': c?.cfdi_ejercicio_limite || 0,
+          'CFDI Registrados': empCfdiCount,
           'Consultas IA (Mes)': c?.consultas_ia_mes || 0,
-          'Límite IA (Mes)': c?.consultas_ia_limite || 0,
           'Almacenamiento (MB)': c?.almacenamiento_mb || 0,
         };
       }),
@@ -76,7 +81,7 @@ export const ConsumoPage: React.FC = () => {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Usos y consumos</h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Monitoreo interno de volumen de CFDIs, almacenamiento de archivos y consultas al
+              Monitoreo real del volumen de CFDIs cargados, almacenamiento de archivos y consultas al
               Asistente Tecno.
             </p>
           </div>
@@ -90,7 +95,7 @@ export const ConsumoPage: React.FC = () => {
           </button>
         </div>
 
-        {/* 4 Tarjetas de consumo */}
+        {/* 4 Tarjetas de consumo real (sin límites ficticios) */}
         <div className="stagger-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="card-interactive rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between">
@@ -98,34 +103,25 @@ export const ConsumoPage: React.FC = () => {
               <Layers className="h-4 w-4 text-blue-600" />
             </div>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              <AnimatedNumber value={consumo.cfdi_historicos} />
+              <AnimatedNumber value={cfdiHistoricos} />
             </p>
             <p className="mt-2 text-[11px] text-slate-500">
-              Incorporados entre 2022 y 2026 sin duplicados
+              Comprobantes reales incorporados sin duplicados
             </p>
           </div>
 
           <div className="card-interactive rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500">
-                CFDI ejercicio 2026 vs límite
+                CFDI ejercicio {currentYear}
               </span>
               <Database className="h-4 w-4 text-indigo-600" />
             </div>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              <AnimatedNumber value={cfdiEjercicioActual} />{' '}
-              <span className="text-xs font-normal text-slate-400">
-                / {formatNumber(consumo.cfdi_ejercicio_limite)}
-              </span>
+              <AnimatedNumber value={cfdiEjercicioActual} />
             </p>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="animate-bar-fill h-full rounded-full bg-gradient-to-r from-indigo-600 to-blue-500"
-                style={{ width: `${pctEjercicio}%` }}
-              />
-            </div>
-            <p className="mt-1 text-right text-[11px] font-medium text-slate-500">
-              {pctEjercicio}% del límite interno
+            <p className="mt-2 text-[11px] text-slate-500">
+              Comprobantes con fecha fiscal en {currentYear}
             </p>
           </div>
 
@@ -137,19 +133,10 @@ export const ConsumoPage: React.FC = () => {
               <Sparkles className="h-4 w-4 text-sky-600" />
             </div>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              <AnimatedNumber value={consumo.consultas_ia_mes} />{' '}
-              <span className="text-xs font-normal text-slate-400">
-                / {formatNumber(consumo.consultas_ia_limite)}
-              </span>
+              <AnimatedNumber value={consultasIaMes} />
             </p>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="animate-bar-fill h-full rounded-full bg-gradient-to-r from-sky-500 to-blue-500"
-                style={{ width: `${pctIa}%` }}
-              />
-            </div>
-            <p className="mt-1 text-right text-[11px] font-medium text-slate-500">
-              {pctIa}% utilizado en Nov 2026
+            <p className="mt-2 text-[11px] text-slate-500 capitalize">
+              Registradas en {currentMonthLabel}
             </p>
           </div>
 
@@ -161,19 +148,11 @@ export const ConsumoPage: React.FC = () => {
               <HardDrive className="h-4 w-4 text-emerald-600" />
             </div>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              <AnimatedNumber value={consumo.almacenamiento_mb} />{' '}
-              <span className="text-xs font-normal text-slate-400">
-                / {consumo.almacenamiento_limite_mb} MB
-              </span>
+              <AnimatedNumber value={almacenamientoMb} />{' '}
+              <span className="text-xs font-normal text-slate-400">MB</span>
             </p>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="animate-bar-fill h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                style={{ width: `${pctStorage}%` }}
-              />
-            </div>
-            <p className="mt-1 text-right text-[11px] font-medium text-slate-500">
-              {pctStorage}% bucket privado
+            <p className="mt-2 text-[11px] text-slate-500">
+              Espacio utilizado por archivos cargados
             </p>
           </div>
         </div>
@@ -184,18 +163,30 @@ export const ConsumoPage: React.FC = () => {
             <h2 className="text-sm font-bold text-slate-900">
               CFDIs incorporados por ejercicio ({activeEmpresa.rfc})
             </h2>
-            <p className="text-xs text-slate-500">Volumen anual almacenado en repositorio SAT</p>
-            <div className="mt-4 h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={consumo.desglose_anual}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="anio" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} />
-                  <Tooltip />
-                  <Bar dataKey="cantidad" name="CFDIs" fill="#0e4b85" radius={[6, 6, 0, 0]} animationDuration={850} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-xs text-slate-500">Volumen anual real en el repositorio</p>
+            {desgloseAnual.length === 0 ? (
+              <div className="mt-4 flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-xs text-slate-500">
+                Sin comprobantes cargados todavía.
+              </div>
+            ) : (
+              <div className="mt-4 h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={desgloseAnual}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="anio" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} />
+                    <Tooltip />
+                    <Bar
+                      dataKey="cantidad"
+                      name="CFDIs"
+                      fill="#0e4b85"
+                      radius={[6, 6, 0, 0]}
+                      animationDuration={850}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -210,35 +201,46 @@ export const ConsumoPage: React.FC = () => {
                 <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Empresa</th>
-                    <th className="px-4 py-3 text-right font-semibold">Históricos</th>
+                    <th className="px-4 py-3 text-right font-semibold">CFDIs</th>
                     <th className="px-4 py-3 text-right font-semibold">Consultas IA</th>
-                    <th className="px-4 py-3 text-right font-semibold">Storage</th>
+                    <th className="px-4 py-3 text-right font-semibold">Almacenamiento</th>
                   </tr>
                 </thead>
                 <tbody className="stagger-rows divide-y divide-slate-100">
-                  {db.empresas.map((emp) => {
-                    const c = db.consumos.find((x) => x.empresa_id === emp.id);
-                    return (
-                      <tr
-                        key={emp.id}
-                        className={emp.id === activeEmpresa.id ? 'bg-blue-50/40' : ''}
-                      >
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-slate-900">{emp.razon_social}</p>
-                          <p className="font-mono-code text-[10px] text-slate-500">{emp.rfc}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                          {formatNumber(c?.cfdi_historicos || 0)}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {c?.consultas_ia_mes || 0} / {c?.consultas_ia_limite || 0}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {c?.almacenamiento_mb || 0} MB
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {db.empresas.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-slate-500">
+                        Aún no hay empresas registradas.
+                      </td>
+                    </tr>
+                  ) : (
+                    db.empresas.map((emp) => {
+                      const c = db.consumos.find((x) => x.empresa_id === emp.id);
+                      const count = db.cfdis.filter(
+                        (item) => item.empresa_id === emp.id && !item.solo_en_sat,
+                      ).length;
+                      return (
+                        <tr
+                          key={emp.id}
+                          className={emp.id === activeEmpresa.id ? 'bg-blue-50/40' : ''}
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-900">{emp.razon_social}</p>
+                            <p className="font-mono-code text-[10px] text-slate-500">{emp.rfc}</p>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums">
+                            {formatNumber(count)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {c?.consultas_ia_mes || 0}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {c?.almacenamiento_mb || 0} MB
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>

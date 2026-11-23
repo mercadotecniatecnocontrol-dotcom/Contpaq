@@ -42,8 +42,8 @@ export function buildSatAuthSoapEnvelope(empresaId: string, rfc: string): SatSoa
     .createHash('sha256')
     .update(signatureSeed)
     .digest('base64');
-  const binaryToken = vaultFiel?.cerBase64 || Buffer.from(`CERT-FIEL-${rfc}`).toString('base64');
-  const numeroSerie = vaultFiel?.numeroSerie || '00001000000500000001';
+  const binaryToken = vaultFiel?.cerBase64 || '';
+  const numeroSerie = vaultFiel?.numeroSerie || '';
 
   const soapXml = `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
   <s:Header>
@@ -94,34 +94,38 @@ export function executeSatSyncJobOnServer(
   newLog: DescargaSat;
   soapPreview: SatSoapEnvelopePreview;
 } {
-  const emp = state.empresas.find((e) => e.id === empresaId) || state.empresas[0];
+  const emp = state.empresas.find((e) => e.id === empresaId);
+  if (!emp) {
+    throw new Error('Empresa no encontrada para sincronización.');
+  }
   const soapPreview = buildSatAuthSoapEnvelope(emp.id, emp.rfc);
   const nowIso = new Date().toISOString();
+  const currentPeriod = nowIso.slice(0, 7);
   const idSolicitud = `SAT-WS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
   const emitidosCount = state.cfdis.filter(
     (c) =>
       c.empresa_id === empresaId &&
       c.direccion === 'E' &&
-      c.fecha_fiscal.startsWith('2026-11') &&
+      c.fecha_fiscal.startsWith(currentPeriod) &&
       !c.solo_en_sat,
   ).length;
   const recibidosCount = state.cfdis.filter(
     (c) =>
       c.empresa_id === empresaId &&
       c.direccion === 'R' &&
-      c.fecha_fiscal.startsWith('2026-11') &&
+      c.fecha_fiscal.startsWith(currentPeriod) &&
       !c.solo_en_sat,
   ).length;
 
   const newLog: DescargaSat = {
     id: `dl-srv-${Date.now()}`,
     empresa_id: empresaId,
-    periodo: 'Nov 2026 (Sync WS SAT Backend)',
+    periodo: `${currentPeriod} (Consulta SAT)`,
     tipo: 'ambos',
     formato: 'xml',
-    fecha_ini: '2026-11-01',
-    fecha_fin: '2026-11-30',
+    fecha_ini: `${currentPeriod}-01`,
+    fecha_fin: nowIso.slice(0, 10),
     cfdi_emitidos: emitidosCount,
     cfdi_recibidos: recibidosCount,
     inicio: nowIso,
@@ -166,22 +170,40 @@ export function executeHistoricalSatJobOnServer(
   requestsCreated: number;
 } {
   const nowIso = new Date().toISOString();
-  const newLogs: DescargaSat[] = years.map((yr, idx) => ({
-    id: `dl-hist-srv-${Date.now()}-${idx}`,
-    empresa_id: empresaId,
-    periodo: `Ejercicio ${yr} (${yr === 2026 ? 11 : 12} solicitudes mensuales)`,
-    tipo: 'ambos',
-    formato: 'xml',
-    fecha_ini: `${yr}-01-01`,
-    fecha_fin: `${yr}-12-31`,
-    cfdi_emitidos: yr === 2025 ? 412 : yr === 2024 ? 389 : 290,
-    cfdi_recibidos: yr === 2025 ? 428 : yr === 2024 ? 391 : 270,
-    inicio: nowIso,
-    fin: nowIso,
-    estado: 'Completada',
-    id_solicitud_sat: `SAT-HIST-${yr}-${Math.floor(1000 + Math.random() * 8999)}`,
-    error: null,
-  }));
+  const newLogs: DescargaSat[] = years.map((yr, idx) => {
+    const yrStr = String(yr);
+    const realEmitidos = state.cfdis.filter(
+      (c) =>
+        c.empresa_id === empresaId &&
+        c.direccion === 'E' &&
+        c.fecha_fiscal.startsWith(yrStr) &&
+        !c.solo_en_sat,
+    ).length;
+    const realRecibidos = state.cfdis.filter(
+      (c) =>
+        c.empresa_id === empresaId &&
+        c.direccion === 'R' &&
+        c.fecha_fiscal.startsWith(yrStr) &&
+        !c.solo_en_sat,
+    ).length;
+
+    return {
+      id: `dl-hist-srv-${Date.now()}-${idx}`,
+      empresa_id: empresaId,
+      periodo: `Ejercicio ${yr} (${yr === new Date().getFullYear() ? new Date().getMonth() + 1 : 12} solicitudes mensuales)`,
+      tipo: 'ambos',
+      formato: 'xml',
+      fecha_ini: `${yr}-01-01`,
+      fecha_fin: `${yr}-12-31`,
+      cfdi_emitidos: realEmitidos,
+      cfdi_recibidos: realRecibidos,
+      inicio: nowIso,
+      fin: nowIso,
+      estado: 'Completada',
+      id_solicitud_sat: `SAT-HIST-${yr}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
+      error: null,
+    };
+  });
 
   const requestsCreated = years.reduce((s, y) => s + (y === 2026 ? 11 : 12), 0);
 

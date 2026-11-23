@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FiscalDatabaseState } from '../../src/types/fiscal';
-import { createInitialSeed } from '../../src/data/mockSeed';
 import { safeJsonParse, stripSensitiveSecrets } from '../../src/utils/security';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
@@ -13,6 +12,36 @@ const LEGACY_DEMO_USER_EMAILS = new Set([
   'gerencia.admin@tecnocontrol.com.mx',
   'aux.contable@tecnocontrol.com.mx',
 ]);
+
+export function createCleanInitialState(): FiscalDatabaseState {
+  return {
+    fecha_corte_sat: '',
+    empresas: [],
+    usuarios: [],
+    efirmas: [],
+    descargas: [],
+    cfdis: [],
+    relaciones: [],
+    pagos: [],
+    conceptos: [],
+    ajustes: [],
+    totales_sat: [],
+    documentos: [],
+    indicadores_custom: [],
+    grupos_indicadores: [
+      'Complementos de pago',
+      'Riesgo fiscal (69-B)',
+      'Deducciones y formas de pago',
+      'Integridad CFDI',
+    ],
+    notificaciones: [],
+    bitacora: [],
+    contable_logs: [],
+    aspel_configs: [],
+    consumos: [],
+    lista_efos: [],
+  };
+}
 
 function normalizeSingleNayraProfile(state: FiscalDatabaseState): FiscalDatabaseState {
   if (!Array.isArray(state.usuarios)) return state;
@@ -61,23 +90,23 @@ class NodeFileStorageAdapter implements BackendStorageAdapter {
     }
 
     if (!fs.existsSync(DB_FILE_PATH)) {
-      const seed = createInitialSeed();
-      return this.saveState(seed);
+      const clean = createCleanInitialState();
+      return this.saveState(clean);
     }
 
     try {
       const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8');
       const parsed = safeJsonParse<FiscalDatabaseState>(raw);
-      if (!parsed || !Array.isArray(parsed.empresas) || parsed.empresas.length === 0) {
-        const seed = createInitialSeed();
-        return this.saveState(seed);
+      if (!parsed || !Array.isArray(parsed.empresas)) {
+        const clean = createCleanInitialState();
+        return this.saveState(clean);
       }
       const normalized = normalizeSingleNayraProfile(parsed);
       this.cache = normalized;
       return normalized;
     } catch {
-      const seed = createInitialSeed();
-      return this.saveState(seed);
+      const clean = createCleanInitialState();
+      return this.saveState(clean);
     }
   }
 
@@ -93,8 +122,8 @@ class NodeFileStorageAdapter implements BackendStorageAdapter {
   }
 
   resetState(): FiscalDatabaseState {
-    const seed = createInitialSeed();
-    return this.saveState(seed);
+    const clean = createCleanInitialState();
+    return this.saveState(clean);
   }
 
   getStorageStats() {
@@ -113,7 +142,7 @@ class NodeFileStorageAdapter implements BackendStorageAdapter {
 
     return {
       driver: this.driverName,
-      dbPath: 'server/data/fiscal_db.json',
+      dbPath: 'almacenamiento-servidor',
       fileSizeBytes,
       lastModified,
       totalCfdis: state.cfdis.length,

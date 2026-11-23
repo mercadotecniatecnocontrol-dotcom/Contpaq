@@ -114,19 +114,12 @@ export const DashboardPage: React.FC = () => {
 
   const aspelConfig = db.aspel_configs.find((a) => a.empresa_id === activeEmpresa.id);
 
-  // Alerta de consumo de licencia / capacidad anual de CFDIs
-  const consumoEmpresa = db.consumos.find((c) => c.empresa_id === activeEmpresa.id);
+  // Conteo real de CFDIs del ejercicio seleccionado
   const companyCfdisInYear = useMemo(
     () => companyCfdis.filter((c) => c.fecha_fiscal.startsWith(selectedYear)),
     [companyCfdis, selectedYear],
   );
-  const cfdisAnualesRegistrados =
-    (consumoEmpresa?.desglose_anual.find((a) => a.anio === selectedYear)?.cantidad || 0) +
-    companyCfdisInYear.length;
-  const limiteAnualCfdis = consumoEmpresa?.cfdi_ejercicio_limite || 5000;
-  const pctConsumoAnual = Number(
-    Math.min(100, (cfdisAnualesRegistrados / Math.max(1, limiteAnualCfdis)) * 100).toFixed(2),
-  );
+  const cfdisAnualesRegistrados = companyCfdisInYear.length;
 
   // Desglose ingresos nominales del mes seleccionado
   const desgloseIngresos = useMemo(
@@ -211,8 +204,31 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
+        {db.empresas.length === 0 && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3 text-xs text-blue-950">
+              <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+              <div>
+                <p className="font-bold">Portal limpio — esperando datos reales</p>
+                <p className="mt-0.5 text-blue-800">
+                  No hay empresas ni comprobantes cargados todavía. Cuando tengas los datos reales
+                  (RFC, e.firma, XML del SAT o conexión a Aspel SAE), registra primero tu empresa.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('empresas')}
+              className="btn-tactile inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#0e4b85] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0b3c6c] cursor-pointer"
+            >
+              Registrar empresa (RFC)
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Aviso si el ejercicio seleccionado aún no tiene CFDIs descargados */}
-        {companyCfdisInYear.length === 0 && (
+        {db.empresas.length > 0 && companyCfdisInYear.length === 0 && (
           <div className="animate-fade-up flex flex-col gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/75 px-4 py-3 text-xs text-amber-950 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-2.5">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -233,7 +249,7 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* Alerta de consumo anual de CFDIs + Nota devengado */}
+        {/* Nota devengado + conteo real de CFDIs */}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="animate-fade-up flex items-start gap-2.5 rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-xs text-blue-900">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
@@ -244,20 +260,19 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="animate-fade-up flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs text-amber-950">
+          <div className="animate-fade-up flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
               <span>
-                <strong>Capacidad de CFDIs anuales registrados ({pctConsumoAnual}%):</strong> Se han
-                registrado <strong>{cfdisAnualesRegistrados.toLocaleString('es-MX')}</strong> de{' '}
-                {limiteAnualCfdis.toLocaleString('es-MX')} CFDIs disponibles en el plan empresarial
-                de {activeEmpresa.razon_social}.
+                <strong>Comprobantes registrados ({selectedYear}):</strong>{' '}
+                <strong>{cfdisAnualesRegistrados.toLocaleString('es-MX')}</strong> CFDI(s) reales
+                cargados para {activeEmpresa.razon_social}.
               </span>
             </div>
             <button
               type="button"
               onClick={() => navigate('consumo')}
-              className="shrink-0 rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer"
+              className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
               Ver consumos
             </button>
@@ -496,14 +511,20 @@ export const DashboardPage: React.FC = () => {
                 </span>
                 {opinionNegativa ? (
                   <AlertTriangle className="h-5 w-5 text-rose-600 animate-pulse" />
-                ) : (
+                ) : opinionSat ? (
                   <CheckCircle2 className="h-5 w-5 text-emerald-600 transition-transform duration-300 group-hover:scale-110" />
+                ) : (
+                  <Info className="h-5 w-5 text-slate-400" />
                 )}
               </div>
               <div className="mt-2 flex items-center justify-between">
                 <p
                   className={`text-lg font-bold capitalize ${
-                    opinionNegativa ? 'text-rose-900' : 'text-emerald-700'
+                    opinionNegativa
+                      ? 'text-rose-900'
+                      : opinionSat
+                        ? 'text-emerald-700'
+                        : 'text-slate-500'
                   }`}
                 >
                   {opinionSat ? opinionSat.sentido : 'Sin cargar'}

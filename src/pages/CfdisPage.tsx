@@ -511,7 +511,7 @@ export const CfdisPage: React.FC<CfdisPageProps> = ({ direccion }) => {
               aria-label="RFC contraparte"
               value={rfcFilter}
               onChange={(e) => setRfcFilter(e.target.value)}
-              placeholder="Ej. GIM980412..."
+              placeholder="RFC contraparte"
               className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5"
             />
           </div>

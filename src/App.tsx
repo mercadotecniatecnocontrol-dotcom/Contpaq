@@ -16,7 +16,7 @@ const LoadingScreen: React.FC<{ message: string }> = ({ message }) => (
 );
 
 const FiscalShell: React.FC = () => {
-  const { authUser, authLoading, dataLoading, db, reloadRemoteState, logout } = useFiscal();
+  const { authUser, authLoading, dataLoading, backendOnline, reloadRemoteState, logout } = useFiscal();
 
   if (authLoading) {
     return <LoadingScreen message="Verificando sesión activa..." />;
@@ -30,7 +30,7 @@ const FiscalShell: React.FC = () => {
     return <LoadingScreen message="Cargando información fiscal..." />;
   }
 
-  if (db.empresas.length === 0) {
+  if (!backendOnline) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 text-center">
         <img src="./logotecno.png" alt="Tecnocontrol" className="h-9 w-auto object-contain" />
