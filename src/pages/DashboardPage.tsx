@@ -37,12 +37,21 @@ import { RoleGuard } from '../components/shared/RoleGuard';
 import { StatusBadge } from '../components/shared/StatusBadge';
 
 export const DashboardPage: React.FC = () => {
-  const { db, activeEmpresa, navigate, ocultarMontos, openCfdiDetail } = useFiscal();
+  const { db, activeEmpresa, navigate, ocultarMontos, openCfdiDetail, routePreset, clearRoutePreset } =
+    useFiscal();
   const [selectedYear, setSelectedYear] = useState('2026');
   const [selectedMes, setSelectedMes] = useState('2026-10');
   const [desgloseOpen, setDesgloseOpen] = useState(false);
   const [showIngresosBar, setShowIngresosBar] = useState(true);
   const [showGastosBar, setShowGastosBar] = useState(true);
+
+  useEffect(() => {
+    if (routePreset?.periodo) {
+      setSelectedYear(routePreset.periodo.slice(0, 4));
+      setSelectedMes(routePreset.periodo);
+      clearRoutePreset();
+    }
+  }, [routePreset, clearRoutePreset]);
 
   const companyCfdis = useMemo(
     () => db.cfdis.filter((c) => c.empresa_id === activeEmpresa.id && !c.solo_en_sat),
@@ -107,9 +116,13 @@ export const DashboardPage: React.FC = () => {
 
   // Alerta de consumo de licencia / capacidad anual de CFDIs
   const consumoEmpresa = db.consumos.find((c) => c.empresa_id === activeEmpresa.id);
+  const companyCfdisInYear = useMemo(
+    () => companyCfdis.filter((c) => c.fecha_fiscal.startsWith(selectedYear)),
+    [companyCfdis, selectedYear],
+  );
   const cfdisAnualesRegistrados =
-    (consumoEmpresa?.desglose_anual.find((a) => a.anio === '2026')?.cantidad || 0) +
-    companyCfdis.length;
+    (consumoEmpresa?.desglose_anual.find((a) => a.anio === selectedYear)?.cantidad || 0) +
+    companyCfdisInYear.length;
   const limiteAnualCfdis = consumoEmpresa?.cfdi_ejercicio_limite || 5000;
   const pctConsumoAnual = Number(
     Math.min(100, (cfdisAnualesRegistrados / Math.max(1, limiteAnualCfdis)) * 100).toFixed(2),
@@ -198,6 +211,28 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Aviso si el ejercicio seleccionado aún no tiene CFDIs descargados */}
+        {companyCfdisInYear.length === 0 && (
+          <div className="animate-fade-up flex flex-col gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/75 px-4 py-3 text-xs text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2.5">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p>
+                Aún no hay comprobantes CFDI incorporados para el ejercicio{' '}
+                <strong>{selectedYear}</strong> en <strong>{activeEmpresa.razon_social}</strong>.
+                Puedes cargar tus paquetes XML/ZIP o solicitar la descarga histórica en
+                Sincronización.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('sincronizacion')}
+              className="shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 cursor-pointer"
+            >
+              Ir a Sincronización histórica
+            </button>
+          </div>
+        )}
+
         {/* Alerta de consumo anual de CFDIs + Nota devengado */}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="animate-fade-up flex items-start gap-2.5 rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-xs text-blue-900">
@@ -247,7 +282,7 @@ export const DashboardPage: React.FC = () => {
               <Money value={mesActual.ingresosNetos} animate />
             </p>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-500">
-              <span>Ejercicio 2026</span>
+              <span>Ejercicio {selectedYear}</span>
               <span className="font-semibold text-slate-800">
                 <Money value={acumulado.ingresos} animate />
               </span>
@@ -270,7 +305,7 @@ export const DashboardPage: React.FC = () => {
               <Money value={mesActual.gastos} animate />
             </p>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-500">
-              <span>Ejercicio 2026</span>
+              <span>Ejercicio {selectedYear}</span>
               <span className="font-semibold text-slate-800">
                 <Money value={acumulado.gastos} animate />
               </span>
@@ -293,7 +328,7 @@ export const DashboardPage: React.FC = () => {
               <Money value={mesActual.isrDeducciones} animate />
             </p>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-500">
-              <span>Acumuladas 2026</span>
+              <span>Acumuladas {selectedYear}</span>
               <span className="font-semibold text-slate-800">
                 <Money value={acumulado.deduccionesIsr} animate />
               </span>

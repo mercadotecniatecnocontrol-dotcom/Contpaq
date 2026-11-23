@@ -1,10 +1,15 @@
-import crypto from 'node:crypto';
+import crypto, { type KeyObject, type X509Certificate } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
 const VAULT_FILE_PATH = path.join(DATA_DIR, 'vault.enc.json');
-const MASTER_KEY_PATH = path.join(DATA_DIR, '.vault_master.key');
+
+// La llave maestra de cifrado vive SIEMPRE fuera del repositorio git (variable de entorno o perfil local del SO)
+const EXTERNAL_KEY_DIR = process.env.LOCALAPPDATA
+  ? path.join(process.env.LOCALAPPDATA, 'TecnocontrolFiscal')
+  : path.join(os.homedir(), '.tecnocontrol-fiscal');
 
 export interface VaultEncryptedRecord {
   empresaId: string;
@@ -36,23 +41,36 @@ export interface EfirmaValidationResult {
   vaultRecord?: Omit<VaultEncryptedRecord, 'cipherTextHex' | 'saltHex' | 'ivHex' | 'authTagHex'>;
 }
 
-function getOrCreateMasterSecret(): Buffer {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+function readOrCreateKeyAt(dirPath: string): Buffer {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
   }
-  const envKey = process.env.TECNOCONTROL_VAULT_MASTER_KEY;
-  if (envKey && envKey.length >= 32) {
-    return crypto.createHash('sha256').update(envKey).digest();
-  }
-  if (fs.existsSync(MASTER_KEY_PATH)) {
-    const hex = fs.readFileSync(MASTER_KEY_PATH, 'utf-8').trim();
-    if (hex.length === 64) {
+  const keyPath = path.join(dirPath, '.vault_master.key');
+  if (fs.existsSync(keyPath)) {
+    const hex = fs.readFileSync(keyPath, 'utf-8').trim();
+    if (/^[0-9a-f]{64}$/i.test(hex)) {
       return Buffer.from(hex, 'hex');
     }
   }
   const generated = crypto.randomBytes(32);
-  fs.writeFileSync(MASTER_KEY_PATH, generated.toString('hex'), { encoding: 'utf-8', mode: 0o600 });
+  fs.writeFileSync(keyPath, generated.toString('hex'), {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
   return generated;
+}
+
+function getOrCreateMasterSecret(): Buffer {
+  const envKey = process.env.TECNOCONTROL_VAULT_MASTER_KEY;
+  if (envKey && envKey.length >= 32) {
+    return crypto.createHash('sha256').update(envKey).digest();
+  }
+  try {
+    return readOrCreateKeyAt(EXTERNAL_KEY_DIR);
+  } catch {
+    // Entornos restringidos: usar directorio temporal fuera del repositorio git
+    return readOrCreateKeyAt(path.join(os.tmpdir(), 'tecnocontrol-fiscal'));
+  }
 }
 
 function loadVaultStore(): Record<string, VaultEncryptedRecord> {
@@ -91,8 +109,96 @@ function parseSatSerialNumber(rawHex: string): string {
 }
 
 /**
- * Inspecciona criptográficamente un archivo .cer (X.509 DER o PEM) usando `node:crypto`.
- * Distingue e.firma (FIEL) vs Sello Digital (CSD), extrae RFC, número de serie y vigencia.
+ * Extrae el RFC contenido en el certificado X.509 (Subject / x500UniqueIdentifier del SAT).
+ */
+function extractRfcFromCertificate(x509: X509Certificate): string | null {
+  const subject = x509.subject || '';
+  const rfcPattern = /\b([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3})\b/i;
+
+  const directMatch = subject.match(rfcPattern);
+  if (directMatch) return directMatch[1].toUpperCase();
+
+  // En algunos certificados del SAT el OID 2.5.4.45 viene en formato ASCII/UTF-8 dentro del DER
+  try {
+    const rawAscii = x509.raw.toString('latin1');
+    const rawMatch = rawAscii.match(rfcPattern);
+    if (rawMatch) return rawMatch[1].toUpperCase();
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Desencripta estrictamente la llave privada (.key) usando la contraseña proporcionada.
+ * Rechaza archivos corruptos, contraseñas incorrectas y llaves sin cifrar.
+ */
+function openEncryptedPrivateKey(
+  keyBuffer: Buffer,
+  password: string,
+): { ok: true; privateKey: KeyObject } | { ok: false; error: string } {
+  const keyText = keyBuffer.toString('utf-8');
+  if (
+    keyText.includes('-----BEGIN PRIVATE KEY-----') ||
+    keyText.includes('-----BEGIN RSA PRIVATE KEY-----') ||
+    keyText.includes('-----BEGIN EC PRIVATE KEY-----')
+  ) {
+    return {
+      ok: false,
+      error:
+        'La llave privada (.key) no está cifrada con contraseña. El SAT únicamente emite llaves privadas cifradas (PKCS#8).',
+    };
+  }
+
+  // Verificar que la llave DER no sea PKCS#8 sin cifrar
+  try {
+    crypto.createPrivateKey({ key: keyBuffer, format: 'der', type: 'pkcs8' });
+    return {
+      ok: false,
+      error:
+        'La llave privada (.key) no está protegida con contraseña. Usa la llave .key cifrada oficial del SAT.',
+    };
+  } catch {
+    // Esperado: una llave .key real del SAT está cifrada y falla sin passphrase
+  }
+
+  // 1. Formato nativo del SAT: PKCS#8 DER cifrado
+  try {
+    const privateKey = crypto.createPrivateKey({
+      key: keyBuffer,
+      format: 'der',
+      type: 'pkcs8',
+      passphrase: password,
+    });
+    return { ok: true, privateKey };
+  } catch {
+    // Intentar formato PEM cifrado
+  }
+
+  // 2. Formato alterno: PKCS#8 / PKCS#1 PEM cifrado
+  try {
+    const privateKey = crypto.createPrivateKey({
+      key: keyBuffer,
+      format: 'pem',
+      passphrase: password,
+    });
+    return { ok: true, privateKey };
+  } catch {
+    return {
+      ok: false,
+      error:
+        'No fue posible abrir la llave privada (.key) con la contraseña proporcionada. Verifica que el archivo .key y la contraseña sean correctos.',
+    };
+  }
+}
+
+/**
+ * Valida criptográficamente de forma estricta un par e.firma (.cer + .key + contraseña):
+ * 1. Parseo X.509 real (sin fallbacks falsos)
+ * 2. Verificación de vigencia real y distinción FIEL vs CSD
+ * 3. Coincidencia estricta de RFC con la empresa activa
+ * 4. Descifrado real de llave privada .key con contraseña (PKCS#8)
+ * 5. Prueba matemática de correspondencia .key <-> .cer (checkPrivateKey + SPKI + firma/verificación SHA-256)
  */
 export function inspectAndValidateEfirma(params: {
   empresaId: string;
@@ -125,92 +231,146 @@ export function inspectAndValidateEfirma(params: {
     return { ok: false, error: 'La contraseña de la clave privada es obligatoria.' };
   }
 
-  const lowerCerName = cerFileName.toLowerCase();
-  if (lowerCerName.includes('csd') || lowerCerName.includes('sello')) {
-    return {
-      ok: false,
-      error:
-        'El certificado detectado corresponde a un Certificado de Sello Digital (CSD). El Web Service del SAT requiere e.firma (FIEL).',
-    };
-  }
-  if (lowerCerName.includes('otro') || lowerCerName.includes('mismatch')) {
-    return {
-      ok: false,
-      error: `El RFC contenido en el certificado no coincide con el RFC activo (${expectedRfc}).`,
-    };
-  }
-
   const cerBuffer = Buffer.from(cerBase64 || '', 'base64');
   const keyBuffer = Buffer.from(keyBase64 || '', 'base64');
 
-  let numeroSerie = `000010000005${Math.floor(10000000 + Math.random() * 89999999)}`;
-  let rfcCertificado = expectedRfc.toUpperCase();
-  let razonSocialCertificado = '';
-  let vigenciaDesde = '2026-11-19';
-  let vigenciaHasta = '2030-11-19';
-
-  // Intentar parseo X.509 nativo real si el archivo contiene un certificado ASN.1 DER o PEM válido
-  if (cerBuffer.length > 64) {
-    try {
-      const x509 = new crypto.X509Certificate(cerBuffer);
-      const subject = x509.subject || '';
-
-      // Verificar si es CSD (en certificados SAT los CSD incluyen OU=Unidad de Facturación o Sello)
-      if (/unidad de facturaci[oó]n|sello digital/i.test(subject)) {
-        return {
-          ok: false,
-          error:
-            'El certificado X.509 proporcionado es un Sello Digital (CSD) de facturación, no una e.firma (FIEL).',
-        };
-      }
-
-      // Extraer RFC del Subject del SAT (x500UniqueIdentifier o serialNumber)
-      const rfcMatch = subject.match(/\b([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3})\b/i);
-      if (rfcMatch) {
-        rfcCertificado = rfcMatch[1].toUpperCase();
-        if (rfcCertificado !== expectedRfc.toUpperCase()) {
-          return {
-            ok: false,
-            error: `El RFC del certificado X.509 (${rfcCertificado}) no coincide con el RFC de la empresa (${expectedRfc}).`,
-          };
-        }
-      }
-
-      const cnMatch = subject.match(/CN=([^\n\r/]+)/i);
-      if (cnMatch) {
-        razonSocialCertificado = cnMatch[1].trim();
-      }
-
-      if (x509.serialNumber) {
-        numeroSerie = parseSatSerialNumber(x509.serialNumber);
-      }
-      if (x509.validFrom) {
-        const dFrom = new Date(x509.validFrom);
-        if (!Number.isNaN(dFrom.getTime())) {
-          vigenciaDesde = dFrom.toISOString().slice(0, 10);
-        }
-      }
-      if (x509.validTo) {
-        const dTo = new Date(x509.validTo);
-        if (!Number.isNaN(dTo.getTime())) {
-          vigenciaHasta = dTo.toISOString().slice(0, 10);
-        }
-      }
-    } catch {
-      // Si el usuario subió un archivo .cer de prueba/simulación en el navegador,
-      // generamos número de serie determinístico a partir del hash SHA-256 del archivo.
-      const hashDigits = crypto
-        .createHash('sha256')
-        .update(cerBuffer)
-        .digest('hex')
-        .replace(/[^0-9]/g, '')
-        .slice(0, 8)
-        .padEnd(8, '7');
-      numeroSerie = `000010000005${hashDigits}`;
-    }
+  if (cerBuffer.length < 128) {
+    return {
+      ok: false,
+      error: 'El archivo .cer está vacío o no contiene un certificado X.509 válido.',
+    };
+  }
+  if (keyBuffer.length < 128) {
+    return {
+      ok: false,
+      error: 'El archivo .key está vacío o no contiene una llave privada PKCS#8 válida.',
+    };
   }
 
-  // Cifrar (.cer, .key y password) con AES-256-GCM + PBKDF2-SHA512 en la bóveda del servidor
+  // 1. Parseo criptográfico real X.509 (cero fallbacks simulados)
+  let x509: X509Certificate;
+  try {
+    x509 = new crypto.X509Certificate(cerBuffer);
+  } catch {
+    return {
+      ok: false,
+      error:
+        'El archivo .cer no es un certificado X.509 válido (formato DER o PEM corrupto o irreconocible).',
+    };
+  }
+
+  const subject = x509.subject || '';
+
+  // 2. Rechazar Certificados de Sello Digital (CSD) de facturación
+  if (
+    /unidad de facturaci[oó]n|sello digital/i.test(subject) ||
+    cerFileName.toLowerCase().includes('csd') ||
+    cerFileName.toLowerCase().includes('sello')
+  ) {
+    return {
+      ok: false,
+      error:
+        'El certificado X.509 proporcionado corresponde a un Sello Digital (CSD) de facturación. Se requiere una e.firma (FIEL).',
+    };
+  }
+
+  // En certificados SAT reales, keyUsage de FIEL incluye firma digital
+  if (
+    Array.isArray(x509.keyUsage) &&
+    x509.keyUsage.length > 0 &&
+    !x509.keyUsage.some((u: string) => /digital\s*signature/i.test(u))
+  ) {
+    return {
+      ok: false,
+      error:
+        'El certificado X.509 no cuenta con el uso de clave requerido para firma digital (e.firma FIEL).',
+    };
+  }
+
+  // 3. Validar vigencia real del certificado X.509
+  const dFrom = new Date(x509.validFrom);
+  const dTo = new Date(x509.validTo);
+  if (Number.isNaN(dFrom.getTime()) || Number.isNaN(dTo.getTime())) {
+    return {
+      ok: false,
+      error: 'No fue posible leer las fechas de vigencia del certificado X.509.',
+    };
+  }
+
+  const nowMs = Date.now();
+  if (nowMs < dFrom.getTime()) {
+    return {
+      ok: false,
+      error: `El certificado .cer aún no inicia vigencia (válido a partir de ${dFrom.toISOString().slice(0, 10)}).`,
+    };
+  }
+  if (nowMs > dTo.getTime()) {
+    return {
+      ok: false,
+      error: `El certificado .cer está vencido desde el ${dTo.toISOString().slice(0, 10)}. Renueva la e.firma ante el SAT.`,
+    };
+  }
+
+  const vigenciaDesde = dFrom.toISOString().slice(0, 10);
+  const vigenciaHasta = dTo.toISOString().slice(0, 10);
+  const numeroSerie = parseSatSerialNumber(x509.serialNumber || '');
+
+  // 4. Extraer y validar coincidencia estricta del RFC del certificado
+  const rfcCertificado = extractRfcFromCertificate(x509);
+  if (!rfcCertificado) {
+    return {
+      ok: false,
+      error:
+        'El certificado X.509 no contiene un RFC válido en su titular (Subject). Verifica que sea una e.firma emitida por el SAT.',
+    };
+  }
+  if (rfcCertificado !== expectedRfc.trim().toUpperCase()) {
+    return {
+      ok: false,
+      error: `El RFC del certificado X.509 (${rfcCertificado}) no coincide con el RFC de la empresa activa (${expectedRfc.toUpperCase()}).`,
+    };
+  }
+
+  const cnMatch = subject.match(/CN=([^\n\r/]+)/i);
+  const razonSocialCertificado = cnMatch ? cnMatch[1].trim() : '';
+
+  // 5. Abrir y descifrar estrictamente la llave privada (.key) con la contraseña
+  const keyResult = openEncryptedPrivateKey(keyBuffer, password);
+  if (!keyResult.ok) {
+    return { ok: false, error: keyResult.error };
+  }
+  const { privateKey } = keyResult;
+
+  // 6. Prueba criptográfica de que la llave privada (.key) corresponde al certificado público (.cer)
+  let keyPairMatches = false;
+  try {
+    const directCheck = x509.checkPrivateKey(privateKey);
+    const derivedPubDer = crypto
+      .createPublicKey(privateKey)
+      .export({ type: 'spki', format: 'der' });
+    const certPubDer = x509.publicKey.export({ type: 'spki', format: 'der' });
+    const spkiMatches =
+      derivedPubDer.length === certPubDer.length &&
+      crypto.timingSafeEqual(derivedPubDer, certPubDer);
+
+    const challenge = crypto.randomBytes(32);
+    const signature = crypto.sign('sha256', challenge, privateKey);
+    const verified = crypto.verify('sha256', challenge, x509.publicKey, signature);
+
+    keyPairMatches = directCheck && spkiMatches && verified;
+  } catch {
+    keyPairMatches = false;
+  }
+
+  if (!keyPairMatches) {
+    return {
+      ok: false,
+      error:
+        'La llave privada (.key) NO corresponde al certificado público (.cer). Verifica que ambos archivos pertenezcan al mismo par de e.firma.',
+    };
+  }
+
+  // 7. Cifrar (.cer, .key y password) con AES-256-GCM + PBKDF2-SHA512 usando la llave maestra externa
   const masterSecret = getOrCreateMasterSecret();
   const salt = crypto.randomBytes(16);
   const derivedKey = crypto.pbkdf2Sync(masterSecret, salt, 100_000, 32, 'sha512');

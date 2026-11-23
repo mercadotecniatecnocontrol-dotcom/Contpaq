@@ -22,6 +22,8 @@ import {
   CATALOGO_TIPO_CFDI,
   CATALOGO_USO_CFDI,
   formatShortDate,
+  getAvailableYears,
+  getLastDayOfMonth,
   shortUuid,
 } from '../utils/format';
 import {
@@ -130,7 +132,7 @@ export const CfdisPage: React.FC<CfdisPageProps> = ({ direccion }) => {
       if (routePreset.tipo) setTipoFilter(routePreset.tipo);
       if (routePreset.periodo) {
         setFechaIni(`${routePreset.periodo}-01`);
-        setFechaFin(`${routePreset.periodo}-31`);
+        setFechaFin(getLastDayOfMonth(routePreset.periodo));
       }
       clearRoutePreset();
     }
@@ -328,16 +330,23 @@ export const CfdisPage: React.FC<CfdisPageProps> = ({ direccion }) => {
     );
   };
 
+  const availableYears = useMemo(() => getAvailableYears(baseCfdis), [baseCfdis]);
+  const selectedYearFilter =
+    fechaIni.slice(0, 4) === fechaFin.slice(0, 4) && availableYears.includes(fechaIni.slice(0, 4))
+      ? fechaIni.slice(0, 4)
+      : 'ALL';
+  const activePresetYear = selectedYearFilter === 'ALL' ? availableYears[0] || '2026' : selectedYearFilter;
+
   const applyPresetRange = (preset: 'nov' | 'oct' | 'year' | 'all') => {
     if (preset === 'nov') {
-      setFechaIni('2026-11-01');
-      setFechaFin('2026-11-30');
+      setFechaIni(`${activePresetYear}-11-01`);
+      setFechaFin(getLastDayOfMonth(`${activePresetYear}-11`));
     } else if (preset === 'oct') {
-      setFechaIni('2026-10-01');
-      setFechaFin('2026-10-31');
+      setFechaIni(`${activePresetYear}-10-01`);
+      setFechaFin(getLastDayOfMonth(`${activePresetYear}-10`));
     } else if (preset === 'year') {
-      setFechaIni('2026-01-01');
-      setFechaFin('2026-12-31');
+      setFechaIni(`${activePresetYear}-01-01`);
+      setFechaFin(`${activePresetYear}-12-31`);
     } else {
       setFechaIni('2020-01-01');
       setFechaFin('2027-12-31');
@@ -409,6 +418,32 @@ export const CfdisPage: React.FC<CfdisPageProps> = ({ direccion }) => {
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="flex items-center gap-1.5">
+            <span className="font-medium text-slate-500">Ejercicio</span>
+            <select
+              name="cfdi-ejercicio"
+              aria-label="Ejercicio fiscal"
+              value={selectedYearFilter}
+              onChange={(e) => {
+                const y = e.target.value;
+                if (y === 'ALL') {
+                  setFechaIni('2020-01-01');
+                  setFechaFin('2027-12-31');
+                } else {
+                  setFechaIni(`${y}-01-01`);
+                  setFechaFin(`${y}-12-31`);
+                }
+              }}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-800"
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+              <option value="ALL">Todos los años</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
             <span className="font-medium text-slate-500">Desde</span>
             <input
               type="date"
@@ -433,9 +468,9 @@ export const CfdisPage: React.FC<CfdisPageProps> = ({ direccion }) => {
           <div className="flex flex-wrap gap-1">
             {(
               [
-                ['nov', 'Nov 2026'],
-                ['oct', 'Oct 2026'],
-                ['year', 'Todo 2026'],
+                ['nov', `Nov ${activePresetYear}`],
+                ['oct', `Oct ${activePresetYear}`],
+                ['year', `Todo ${activePresetYear}`],
                 ['all', 'Histórico'],
               ] as const
             ).map(([k, lbl]) => (

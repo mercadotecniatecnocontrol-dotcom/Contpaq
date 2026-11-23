@@ -11,7 +11,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useFiscal } from '../context/FiscalContext';
-import { formatDateTime, formatShortDate, shortUuid } from '../utils/format';
+import { formatDateTime, formatShortDate, getAvailableYears, shortUuid } from '../utils/format';
 import { exportToExcel } from '../utils/exportExcel';
 import { Money } from '../components/shared/Money';
 import { AnimatedNumber } from '../components/shared/AnimatedNumber';
@@ -33,17 +33,24 @@ export const VinculacionesPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'todos' | 'con_poliza' | 'pendiente' | 'sin_registro'>(
     'todos',
   );
+  const [selectedYear, setSelectedYear] = useState<string>('ALL');
   const [search, setSearch] = useState('');
 
   const isReadOnly = currentUser.rol === 'consulta';
   const aspelConfig = db.aspel_configs.find((c) => c.empresa_id === activeEmpresa.id);
 
+  const allCompanyCfdis = useMemo(
+    () => db.cfdis.filter((c) => c.empresa_id === activeEmpresa.id && !c.solo_en_sat),
+    [db.cfdis, activeEmpresa.id],
+  );
+  const availableYears = useMemo(() => getAvailableYears(allCompanyCfdis), [allCompanyCfdis]);
+
   const companyCfdis = useMemo(
     () =>
-      db.cfdis.filter(
-        (c) => c.empresa_id === activeEmpresa.id && !c.solo_en_sat && c.fecha_fiscal >= '2026-10-01',
-      ),
-    [db.cfdis, activeEmpresa.id],
+      selectedYear === 'ALL'
+        ? allCompanyCfdis
+        : allCompanyCfdis.filter((c) => c.fecha_fiscal.startsWith(selectedYear)),
+    [allCompanyCfdis, selectedYear],
   );
 
   const counts = useMemo(
@@ -256,17 +263,34 @@ export const VinculacionesPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="relative sm:w-64">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                name="vinc-busqueda"
-                aria-label="Buscar por UUID, póliza o contraparte"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="UUID, póliza o contraparte..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-1.5 pr-3 pl-8 text-xs focus:border-blue-500 focus:bg-white focus:outline-none"
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                name="vinc-ejercicio"
+                aria-label="Ejercicio fiscal"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-800"
+              >
+                <option value="ALL">Todos los años</option>
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+
+              <div className="relative sm:w-64">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  name="vinc-busqueda"
+                  aria-label="Buscar por UUID, póliza o contraparte"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="UUID, póliza o contraparte..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-1.5 pr-3 pl-8 text-xs focus:border-blue-500 focus:bg-white focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 

@@ -1,9 +1,13 @@
 node_modules
 dist
 server/.dist
-server/data/vault.enc.json
-server/data/auth_users.json
-server/data/sessions.json
+server/data/*
+!server/data/.gitkeep
+**/.vault_master.key
+*.key
+*.cer
+*.pem
+tsconfig.tsbuildinfo
 .env
-.env.local
+.env.*
 *.local

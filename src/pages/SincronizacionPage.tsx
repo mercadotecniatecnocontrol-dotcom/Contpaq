@@ -25,7 +25,7 @@ import {
   processXmlBatchForEmpresa,
 } from '../utils/zipProcessor';
 
-const HISTORICAL_YEARS = [2026, 2025, 2024, 2023, 2022];
+const HISTORICAL_YEARS = [2026, 2025, 2024, 2023, 2022, 2021];
 
 export const SincronizacionPage: React.FC = () => {
   const {

@@ -543,9 +543,6 @@ export function getResumenMensual(
   });
 }
 
-// =========================================================================
-// VISOR SAT (Conciliación SAT vs Portal)
-// =========================================================================
 export function getConciliacionSat(
   state: FiscalDatabaseState,
   empresaId: string,
@@ -679,7 +676,7 @@ function matchCustomRule(cfdi: Cfdi, regla: ReglaFiltroPersonalizado): boolean {
 export function evaluateIndicadores(
   state: FiscalDatabaseState,
   empresa: Empresa,
-  periodo: string, // 'YYYY-MM'
+  periodo: string,
 ): IndicadorResultado[] {
   const cfdis = getCompanyPortalCfdis(state, empresa.id);
   const cfdiByUuid = new Map(cfdis.map((c) => [c.uuid, c]));
@@ -899,9 +896,6 @@ export function evaluateIndicadores(
   });
 }
 
-// =========================================================================
-// FACTURAS PPD PENDIENTES DE COBRO (usado por Asistente Tecno)
-// =========================================================================
 export function getPpdPendientesCobro(
   state: FiscalDatabaseState,
   empresaId: string,
@@ -922,9 +916,6 @@ export function getPpdPendientesCobro(
     .filter((item) => item.pendiente > 1);
 }
 
-// =========================================================================
-// CÉDULA COMPLETA DE DETERMINACIÓN DE IVA (4 ACORDEONES POR TASAS)
-// =========================================================================
 export interface CedulaIvaPeriodo {
   trasladado: {
     actos16: number;
@@ -1029,7 +1020,6 @@ export function getCedulaIvaPeriodo(
   );
   const totalIvaTrasladado = Number((ivaCobradoTotal - ivaDevoluciones).toFixed(2));
 
-  // Acreditable
   const acredActivos = ivaFlujo.acreditableRows.filter((r) => r.activo);
   const acredGastos = acredActivos.filter((r) => r.cfdi.tipo === 'I');
   const acredEgresos = acredActivos.filter((r) => r.cfdi.tipo === 'E');
@@ -1109,9 +1099,6 @@ export function getCedulaIvaPeriodo(
   };
 }
 
-// =========================================================================
-// CÉDULA COMPLETA DE DETERMINACIÓN DE ISR (3 ACORDEONES + RETENCIONES)
-// =========================================================================
 export interface TripleMontoIsr {
   anterior: number;
   periodo: number;

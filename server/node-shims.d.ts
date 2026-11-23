@@ -2,12 +2,12 @@
 // Archivo de declaración ambiental global (sin `export {}` en la raíz)
 
 interface Buffer extends Uint8Array<ArrayBuffer> {
-  toString(encoding?: 'utf-8' | 'utf8' | 'hex' | 'base64' | 'ascii'): string;
+  toString(encoding?: 'utf-8' | 'utf8' | 'hex' | 'base64' | 'base64url' | 'ascii' | 'latin1'): string;
   slice(start?: number, end?: number): Buffer;
 }
 
 declare var Buffer: {
-  from(data: string, encoding?: 'utf-8' | 'utf8' | 'hex' | 'base64' | 'ascii'): Buffer;
+  from(data: string, encoding?: 'utf-8' | 'utf8' | 'hex' | 'base64' | 'base64url' | 'ascii' | 'latin1'): Buffer;
   from(data: ArrayBufferLike | Uint8Array | Buffer | number[]): Buffer;
   concat(list: readonly (Uint8Array | Buffer)[], totalLength?: number): Buffer;
   isBuffer(obj: unknown): obj is Buffer;
@@ -106,6 +106,7 @@ declare module 'node:fs' {
     options?: 'utf-8' | 'utf8' | { encoding?: 'utf-8' | 'utf8'; mode?: number },
   ): void;
   export function renameSync(oldPath: string, newPath: string): void;
+  export function unlinkSync(path: string): void;
   export function statSync(path: string): Stats;
 
   const fsDefault: {
@@ -114,9 +115,20 @@ declare module 'node:fs' {
     readFileSync: typeof readFileSync;
     writeFileSync: typeof writeFileSync;
     renameSync: typeof renameSync;
+    unlinkSync: typeof unlinkSync;
     statSync: typeof statSync;
   };
   export default fsDefault;
+}
+
+declare module 'node:os' {
+  export function homedir(): string;
+  export function tmpdir(): string;
+  const osDefault: {
+    homedir: typeof homedir;
+    tmpdir: typeof tmpdir;
+  };
+  export default osDefault;
 }
 
 declare module 'node:path' {
@@ -151,6 +163,12 @@ declare module 'node:crypto' {
     update(data: Uint8Array): Buffer;
     final(): Buffer;
   }
+  export interface KeyObject {
+    readonly type: 'secret' | 'public' | 'private';
+    readonly asymmetricKeyType?: string;
+    export(options: { type: 'spki' | 'pkcs8' | 'pkcs1'; format: 'der' }): Buffer;
+    export(options: { type: 'spki' | 'pkcs8' | 'pkcs1'; format: 'pem' }): string;
+  }
   export class X509Certificate {
     constructor(buffer: Uint8Array | string);
     readonly subject: string;
@@ -159,8 +177,35 @@ declare module 'node:crypto' {
     readonly validFrom: string;
     readonly validTo: string;
     readonly fingerprint256: string;
+    readonly publicKey: KeyObject;
+    readonly raw: Buffer;
+    readonly keyUsage?: string[];
+    checkPrivateKey(privateKey: KeyObject): boolean;
   }
   export function createHash(algorithm: 'sha1' | 'sha256' | 'sha512'): Hash;
+  export function createPrivateKey(
+    key:
+      | string
+      | Buffer
+      | {
+          key: string | Buffer;
+          format?: 'pem' | 'der';
+          type?: 'pkcs1' | 'pkcs8' | 'sec1';
+          passphrase?: string | Buffer;
+        },
+  ): KeyObject;
+  export function createPublicKey(key: KeyObject | string | Buffer): KeyObject;
+  export function sign(
+    algorithm: string | null | undefined,
+    data: Uint8Array,
+    key: KeyObject,
+  ): Buffer;
+  export function verify(
+    algorithm: string | null | undefined,
+    data: Uint8Array,
+    key: KeyObject,
+    signature: Uint8Array,
+  ): boolean;
   export function randomBytes(size: number): Buffer;
   export function randomUUID(): string;
   export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean;
@@ -185,6 +230,10 @@ declare module 'node:crypto' {
   const cryptoDefault: {
     X509Certificate: typeof X509Certificate;
     createHash: typeof createHash;
+    createPrivateKey: typeof createPrivateKey;
+    createPublicKey: typeof createPublicKey;
+    sign: typeof sign;
+    verify: typeof verify;
     randomBytes: typeof randomBytes;
     randomUUID: typeof randomUUID;
     timingSafeEqual: typeof timingSafeEqual;

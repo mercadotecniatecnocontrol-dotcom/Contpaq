@@ -8,18 +8,37 @@ import { safeJsonParse } from '../../src/utils/security';
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
 const AUTH_USERS_PATH = path.join(DATA_DIR, 'auth_users.json');
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
+const LOCKOUTS_PATH = path.join(DATA_DIR, 'lockouts.json');
 
 export const SESSION_COOKIE_NAME = 'tc_fiscal_session';
 const PBKDF2_ITERATIONS = 120_000;
 const PBKDF2_KEYLEN = 64;
 const SESSION_TTL_SHORT_MS = 8 * 60 * 60 * 1000; // 8 horas
 const SESSION_TTL_REMEMBER_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
-const MAX_FAILED_ATTEMPTS = 5;
+const MAX_FAILED_ATTEMPTS_IP = 5;
+const MAX_FAILED_ATTEMPTS_ACCOUNT = 8;
 const LOCKOUT_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
+const ACCOUNT_LOCKOUT_WINDOW_MS = 10 * 60 * 1000; // 10 minutos
 
-// Contraseña inicial de primer acceso para C.P. Nayra Mendoza (se guarda solo como hash PBKDF2-SHA512)
-export const INITIAL_ADMIN_EMAIL = 'contabilidad@tecnocontrol.com.mx';
-export const INITIAL_ADMIN_PASSWORD = process.env.FISCAL_ADMIN_PASSWORD || 'Tecnocontrol2026!';
+// Correo titular inicial (la contraseña inicial jamás se hardcodea en código fuente)
+export const INITIAL_ADMIN_EMAIL =
+  (process.env.FISCAL_ADMIN_EMAIL || 'contabilidad@tecnocontrol.com.mx').trim().toLowerCase();
+
+function resolveBootstrapPassword(): { password: string; wasGenerated: boolean } {
+  const fromEnv = String(process.env.FISCAL_ADMIN_PASSWORD || '').trim();
+  if (fromEnv.length >= 10) {
+    return { password: fromEnv, wasGenerated: false };
+  }
+  // Generar contraseña aleatoria criptográficamente segura en primer arranque (jamás fija en el repo)
+  const randomPwd = `${crypto.randomBytes(12).toString('base64url')}9A!`;
+  return { password: randomPwd, wasGenerated: true };
+}
+
+// Sal fija para mitigación de timing attacks cuando el usuario no existe
+const DUMMY_SALT = 'f4e3d2c1b0a99887766554433221100f';
+const DUMMY_HASH = crypto
+  .pbkdf2Sync('invalid-dummy-password-check', DUMMY_SALT, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, 'sha512')
+  .toString('hex');
 
 export interface PublicAuthUser {
   id: string;
@@ -50,9 +69,59 @@ interface StoredSession {
 interface FailedLoginBucket {
   attempts: number;
   lockedUntil: number;
+  updatedAt: number;
 }
 
-const failedAttempts = new Map<string, FailedLoginBucket>();
+function loadLockouts(): Record<string, FailedLoginBucket> {
+  ensureDataDir();
+  if (!fs.existsSync(LOCKOUTS_PATH)) return {};
+  try {
+    const raw = fs.readFileSync(LOCKOUTS_PATH, 'utf-8');
+    const parsed = safeJsonParse<Record<string, FailedLoginBucket>>(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const now = Date.now();
+    const active: Record<string, FailedLoginBucket> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v && (v.lockedUntil > now || now - (v.updatedAt || 0) < ACCOUNT_LOCKOUT_WINDOW_MS)) {
+        active[k] = v;
+      }
+    }
+    return active;
+  } catch {
+    return {};
+  }
+}
+
+function saveLockouts(buckets: Record<string, FailedLoginBucket>): void {
+  writeJsonAtomic(LOCKOUTS_PATH, buckets);
+}
+
+function createInitialAdminUser(): StoredAuthUser[] {
+  const nowIso = new Date().toISOString();
+  const { password, wasGenerated } = resolveBootstrapPassword();
+  const { hash, salt } = hashPassword(password);
+  const seedUsers: StoredAuthUser[] = [
+    {
+      id: 'usr-nayra-mendoza',
+      nombre: 'C.P. Nayra Mendoza',
+      correo: INITIAL_ADMIN_EMAIL,
+      rol: 'propietario',
+      area: 'Contabilidad y Fiscal',
+      passwordHash: hash,
+      passwordSalt: salt,
+      activo: true,
+      creadoEn: nowIso,
+      actualizadoEn: nowIso,
+    },
+  ];
+  writeJsonAtomic(AUTH_USERS_PATH, seedUsers);
+  if (wasGenerated) {
+    console.warn(
+      `[Seguridad Tecnocontrol] Se generó contraseña inicial única para ${INITIAL_ADMIN_EMAIL}: ${password} — cámbiala en tu primer inicio de sesión o define FISCAL_ADMIN_PASSWORD.`,
+    );
+  }
+  return seedUsers;
+}
 
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
@@ -80,31 +149,14 @@ function hashSessionToken(token: string): string {
 function writeJsonAtomic(filePath: string, data: unknown): void {
   ensureDataDir();
   const tmpPath = `${filePath}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
   fs.renameSync(tmpPath, filePath);
 }
 
 function loadUsers(): StoredAuthUser[] {
   ensureDataDir();
   if (!fs.existsSync(AUTH_USERS_PATH)) {
-    const nowIso = new Date().toISOString();
-    const { hash, salt } = hashPassword(INITIAL_ADMIN_PASSWORD);
-    const seedUsers: StoredAuthUser[] = [
-      {
-        id: 'usr-nayra-mendoza',
-        nombre: 'C.P. Nayra Mendoza',
-        correo: INITIAL_ADMIN_EMAIL,
-        rol: 'propietario',
-        area: 'Contabilidad y Fiscal',
-        passwordHash: hash,
-        passwordSalt: salt,
-        activo: true,
-        creadoEn: nowIso,
-        actualizadoEn: nowIso,
-      },
-    ];
-    writeJsonAtomic(AUTH_USERS_PATH, seedUsers);
-    return seedUsers;
+    return createInitialAdminUser();
   }
 
   try {
@@ -117,24 +169,7 @@ function loadUsers(): StoredAuthUser[] {
     // regenerar si el archivo está corrupto
   }
 
-  const nowIso = new Date().toISOString();
-  const { hash, salt } = hashPassword(INITIAL_ADMIN_PASSWORD);
-  const fallback: StoredAuthUser[] = [
-    {
-      id: 'usr-nayra-mendoza',
-      nombre: 'C.P. Nayra Mendoza',
-      correo: INITIAL_ADMIN_EMAIL,
-      rol: 'propietario',
-      area: 'Contabilidad y Fiscal',
-      passwordHash: hash,
-      passwordSalt: salt,
-      activo: true,
-      creadoEn: nowIso,
-      actualizadoEn: nowIso,
-    },
-  ];
-  writeJsonAtomic(AUTH_USERS_PATH, fallback);
-  return fallback;
+  return createInitialAdminUser();
 }
 
 function saveUsers(users: StoredAuthUser[]): void {
@@ -232,12 +267,17 @@ export function authenticateCredentials(payload: {
 } {
   const emailNorm = String(payload.email || '').trim().toLowerCase();
   const password = String(payload.password || '');
-  const lockKey = `${payload.clientIp}::${emailNorm}`;
+  const ipLockKey = `ip::${payload.clientIp}::${emailNorm}`;
+  const acctLockKey = `acct::${emailNorm}`;
   const now = Date.now();
 
-  const bucket = failedAttempts.get(lockKey);
-  if (bucket && bucket.lockedUntil > now) {
-    const waitMin = Math.ceil((bucket.lockedUntil - now) / 60_000);
+  const lockouts = loadLockouts();
+  const ipBucket = lockouts[ipLockKey];
+  const acctBucket = lockouts[acctLockKey];
+  const activeLockUntil = Math.max(ipBucket?.lockedUntil || 0, acctBucket?.lockedUntil || 0);
+
+  if (activeLockUntil > now) {
+    const waitMin = Math.ceil((activeLockUntil - now) / 60_000);
     return {
       ok: false,
       statusCode: 429,
@@ -257,25 +297,40 @@ export function authenticateCredentials(payload: {
   const userIdx = users.findIndex((u) => u.correo.toLowerCase() === emailNorm && u.activo);
   const foundUser = userIdx >= 0 ? users[userIdx] : null;
 
+  // Ejecutar PBKDF2 incluso si el usuario no existe para evitar enumeración por tiempo de respuesta
   const passwordValid = foundUser
     ? verifyPassword(password, foundUser.passwordHash, foundUser.passwordSalt)
-    : false;
+    : verifyPassword(password, DUMMY_HASH, DUMMY_SALT) && false;
 
   if (!foundUser || !passwordValid) {
-    const nextAttempts = (bucket?.attempts || 0) + 1;
-    if (nextAttempts >= MAX_FAILED_ATTEMPTS) {
-      failedAttempts.set(lockKey, {
-        attempts: nextAttempts,
-        lockedUntil: now + LOCKOUT_WINDOW_MS,
-      });
+    const nextIpAttempts = (ipBucket?.attempts || 0) + 1;
+    const nextAcctAttempts = (acctBucket?.attempts || 0) + 1;
+
+    lockouts[ipLockKey] = {
+      attempts: nextIpAttempts,
+      lockedUntil: nextIpAttempts >= MAX_FAILED_ATTEMPTS_IP ? now + LOCKOUT_WINDOW_MS : 0,
+      updatedAt: now,
+    };
+    lockouts[acctLockKey] = {
+      attempts: nextAcctAttempts,
+      lockedUntil:
+        nextAcctAttempts >= MAX_FAILED_ATTEMPTS_ACCOUNT ? now + ACCOUNT_LOCKOUT_WINDOW_MS : 0,
+      updatedAt: now,
+    };
+    saveLockouts(lockouts);
+
+    if (
+      nextIpAttempts >= MAX_FAILED_ATTEMPTS_IP ||
+      nextAcctAttempts >= MAX_FAILED_ATTEMPTS_ACCOUNT
+    ) {
       return {
         ok: false,
         statusCode: 429,
         error:
-          'Se alcanzó el límite de 5 intentos fallidos. El acceso quedó bloqueado temporalmente por 5 minutos.',
+          'Se alcanzó el límite de intentos fallidos. El acceso quedó bloqueado temporalmente por seguridad.',
       };
     }
-    failedAttempts.set(lockKey, { attempts: nextAttempts, lockedUntil: 0 });
+
     return {
       ok: false,
       statusCode: 401,
@@ -283,8 +338,12 @@ export function authenticateCredentials(payload: {
     };
   }
 
-  // Acceso correcto: limpiar intentos fallidos
-  failedAttempts.delete(lockKey);
+  // Acceso correcto: limpiar bloqueos de esta cuenta/IP
+  if (lockouts[ipLockKey] || lockouts[acctLockKey]) {
+    delete lockouts[ipLockKey];
+    delete lockouts[acctLockKey];
+    saveLockouts(lockouts);
+  }
 
   const nowIso = new Date().toISOString();
   const ttlMs = payload.rememberMe ? SESSION_TTL_REMEMBER_MS : SESSION_TTL_SHORT_MS;

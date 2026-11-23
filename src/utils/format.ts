@@ -77,14 +77,31 @@ export function getMesesForYear(year: string) {
   }));
 }
 
-export function getAvailableYears(cfdis: Array<{ fecha_fiscal: string }>): string[] {
+export function getAvailableYears(
+  cfdis: Array<{ fecha_fiscal: string }> = [],
+  minHistoryYears = 6,
+): string[] {
   const set = new Set<string>();
+  const latestBase = Math.max(2026, new Date().getFullYear());
+  for (let i = 0; i < minHistoryYears; i++) {
+    set.add(String(latestBase - i));
+  }
   for (const c of cfdis) {
     const y = c.fecha_fiscal?.slice(0, 4);
     if (y && /^\d{4}$/.test(y)) set.add(y);
   }
-  if (set.size === 0) set.add('2026');
   return Array.from(set).sort((a, b) => b.localeCompare(a));
+}
+
+export function getLastDayOfMonth(yearMonth: string): string {
+  const [yStr, mStr] = yearMonth.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+    return `${yearMonth}-30`;
+  }
+  const lastDay = new Date(y, m, 0).getDate();
+  return `${yStr}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 }
 
 export const MESES_ES = getMesesForYear('2026');

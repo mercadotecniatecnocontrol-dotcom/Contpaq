@@ -30,13 +30,19 @@ import {
 } from './auth/authService';
 import {
   applyBackendSecurityHeaders,
-  assertRoleAccess,
   checkRateLimit,
-  extractActorFromHeaders,
   inspectPayloadForThreats,
 } from './security/apiFirewall';
+import {
+  filterStateForUser,
+  getAuthorizedEmpresaRoles,
+  mergeScopedStateUpdate,
+  resolveAuthorizedTargetEmpresa,
+} from './security/tenantAccess';
 
 const MAX_BODY_BYTES = 18 * 1024 * 1024; // 18 MB para lotes grandes de XMLs
+const SAFE_EMPRESA_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const SAFE_PERIODO_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   applyBackendSecurityHeaders(res);
@@ -63,6 +69,21 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+function readRequestedEmpresaId(
+  req: IncomingMessage,
+  explicit?: string | null,
+): { ok: true; empresaId: string } | { ok: false; error: string } {
+  const rawHeader = typeof req.headers['x-fiscal-empresa'] === 'string' ? req.headers['x-fiscal-empresa'] : '';
+  const candidate = String(explicit ?? rawHeader ?? '').trim();
+  if (!candidate) {
+    return { ok: true, empresaId: '' };
+  }
+  if (!SAFE_EMPRESA_ID_RE.test(candidate)) {
+    return { ok: false, error: 'Identificador de empresa con formato inválido.' };
+  }
+  return { ok: true, empresaId: candidate };
+}
+
 export async function handleApiRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -76,18 +97,33 @@ export async function handleApiRequest(
   const pathname = parsedUrl.pathname;
   const method = (req.method || 'GET').toUpperCase();
 
-  // CORS para despliegues donde frontend y backend corren en puertos separados
-  res.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:3000');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, x-fiscal-role, x-fiscal-user, x-fiscal-empresa',
-  );
+  // CORS dinámico para orígenes locales / LAN privada (sin fijar 127.0.0.1 para otros orígenes)
+  const reqOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  const isLocalOrLanOrigin =
+    /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(
+      reqOrigin,
+    );
+  res.setHeader('Vary', 'Origin');
+  if (isLocalOrLanOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, x-fiscal-role, x-fiscal-user, x-fiscal-empresa',
+    );
+  }
+
   if (method === 'OPTIONS') {
     applyBackendSecurityHeaders(res);
-    res.statusCode = 204;
+    res.statusCode = isLocalOrLanOrigin || !reqOrigin ? 204 : 403;
     res.end();
+    return true;
+  }
+
+  // Protección anti-CSRF por Origin en peticiones con escritura
+  if (reqOrigin && !isLocalOrLanOrigin && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    sendJson(res, 403, { ok: false, error: 'Origen no autorizado.' });
     return true;
   }
 
@@ -102,20 +138,60 @@ export async function handleApiRequest(
     return true;
   }
 
-  const headerActor = extractActorFromHeaders(req);
-
   try {
-    // 1. GET /api/health — Diagnóstico de salud (público)
+    // 1. GET /api/health — Diagnóstico mínimo público; detalles filtrados solo con sesión válida
     if (method === 'GET' && pathname === '/api/health') {
-      const stats = backendStorage.getStorageStats();
-      const vault = getPublicVaultStatus(headerActor.empresaId);
+      const healthSession = getAuthenticatedSession(req);
+      if (!healthSession.authenticated || !healthSession.user) {
+        sendJson(res, 200, {
+          ok: true,
+          status: 'online',
+        });
+        return true;
+      }
+
+      const fullState = backendStorage.loadState();
+      const empInput = readRequestedEmpresaId(req);
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
+        return true;
+      }
+
+      const access = resolveAuthorizedTargetEmpresa(
+        fullState,
+        healthSession.user,
+        empInput.empresaId,
+      );
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
+      const filtered = filterStateForUser(fullState, healthSession.user);
+      const rawStats = backendStorage.getStorageStats();
+      const vault =
+        access.rol === 'propietario'
+          ? getPublicVaultStatus(access.empresaId)
+          : {
+              configuredInVault: false,
+              algoritmo: 'AES-256-GCM',
+              kdf: 'PBKDF2-SHA512-100000',
+            };
+
       sendJson(res, 200, {
         ok: true,
-        service: 'Tecnocontrol Fiscal SAT — Node.js Backend API',
-        version: '2.1.0',
+        service: 'Portal Operativo Tecnocontrol',
+        version: '2.2.0',
         status: 'online',
         timestamp: new Date().toISOString(),
-        storage: stats,
+        storage: {
+          driver: rawStats.driver,
+          dbPath: 'almacenamiento-servidor',
+          fileSizeBytes: rawStats.fileSizeBytes,
+          lastModified: rawStats.lastModified,
+          totalCfdis: filtered.cfdis.length,
+          totalEmpresas: filtered.empresas.length,
+        },
         vault,
       });
       return true;
@@ -165,26 +241,29 @@ export async function handleApiRequest(
 
       setSessionCookie(res, authRes.token, authRes.maxAgeSeconds || 28800);
 
-      // Registrar inicio de sesión en la bitácora de auditoría
+      // Registrar inicio de sesión únicamente en una empresa perteneciente al usuario autenticado
       try {
         const state = backendStorage.loadState();
-        const targetEmpId = headerActor.empresaId || state.empresas[0]?.id || 'emp-hedma';
-        backendStorage.saveState({
-          ...state,
-          bitacora: [
-            {
-              id: `bit-login-${Date.now()}`,
-              empresa_id: targetEmpId,
-              usuario: authRes.user.nombre,
-              rol: authRes.user.rol,
-              modulo: 'Acceso y Seguridad',
-              accion: 'Inicio de sesión',
-              detalle: `Acceso autorizado para ${authRes.user.correo}.`,
-              fecha: new Date().toISOString(),
-            },
-            ...state.bitacora,
-          ],
-        });
+        const roleMap = getAuthorizedEmpresaRoles(state, authRes.user.correo);
+        const targetEmpId = Array.from(roleMap.keys())[0];
+        if (targetEmpId) {
+          backendStorage.saveState({
+            ...state,
+            bitacora: [
+              {
+                id: `bit-login-${Date.now()}`,
+                empresa_id: targetEmpId,
+                usuario: authRes.user.nombre,
+                rol: roleMap.get(targetEmpId) || authRes.user.rol,
+                modulo: 'Acceso y Seguridad',
+                accion: 'Inicio de sesión',
+                detalle: `Acceso autorizado para ${authRes.user.correo}.`,
+                fecha: new Date().toISOString(),
+              },
+              ...state.bitacora,
+            ],
+          });
+        }
       } catch {
         // no bloquear login si falla escritura de bitácora
       }
@@ -206,23 +285,26 @@ export async function handleApiRequest(
       if (prevSession.authenticated && prevSession.user) {
         try {
           const state = backendStorage.loadState();
-          const targetEmpId = headerActor.empresaId || state.empresas[0]?.id || 'emp-hedma';
-          backendStorage.saveState({
-            ...state,
-            bitacora: [
-              {
-                id: `bit-logout-${Date.now()}`,
-                empresa_id: targetEmpId,
-                usuario: prevSession.user.nombre,
-                rol: prevSession.user.rol,
-                modulo: 'Acceso y Seguridad',
-                accion: 'Cierre de sesión',
-                detalle: `${prevSession.user.nombre} cerró sesión en el portal.`,
-                fecha: new Date().toISOString(),
-              },
-              ...state.bitacora,
-            ],
-          });
+          const roleMap = getAuthorizedEmpresaRoles(state, prevSession.user.correo);
+          const targetEmpId = Array.from(roleMap.keys())[0];
+          if (targetEmpId) {
+            backendStorage.saveState({
+              ...state,
+              bitacora: [
+                {
+                  id: `bit-logout-${Date.now()}`,
+                  empresa_id: targetEmpId,
+                  usuario: prevSession.user.nombre,
+                  rol: roleMap.get(targetEmpId) || prevSession.user.rol,
+                  modulo: 'Acceso y Seguridad',
+                  accion: 'Cierre de sesión',
+                  detalle: `${prevSession.user.nombre} cerró sesión en el portal.`,
+                  fecha: new Date().toISOString(),
+                },
+                ...state.bitacora,
+              ],
+            });
+          }
         } catch {
           // ignore
         }
@@ -244,12 +326,7 @@ export async function handleApiRequest(
       return true;
     }
 
-    // La identidad del actor proviene de la sesión verificada en el servidor
-    const actor = {
-      rol: session.user.rol,
-      usuario: session.user.nombre,
-      empresaId: headerActor.empresaId,
-    };
+    const sessionUser = session.user;
 
     // 1.4 POST /api/auth/change-password — Cambiar contraseña de la cuenta activa
     if (method === 'POST' && pathname === '/api/auth/change-password') {
@@ -260,7 +337,7 @@ export async function handleApiRequest(
       }>(raw);
 
       const result = changeUserPassword({
-        userId: session.user.id,
+        userId: sessionUser.id,
         currentPassword: body?.currentPassword || '',
         newPassword: body?.newPassword || '',
         currentToken: extractSessionToken(req),
@@ -273,22 +350,26 @@ export async function handleApiRequest(
 
       try {
         const state = backendStorage.loadState();
-        backendStorage.saveState({
-          ...state,
-          bitacora: [
-            {
-              id: `bit-pwd-${Date.now()}`,
-              empresa_id: actor.empresaId,
-              usuario: session.user.nombre,
-              rol: session.user.rol,
-              modulo: 'Acceso y Seguridad',
-              accion: 'Cambio de contraseña',
-              detalle: `Contraseña actualizada correctamente para ${session.user.correo}.`,
-              fecha: new Date().toISOString(),
-            },
-            ...state.bitacora,
-          ],
-        });
+        const roleMap = getAuthorizedEmpresaRoles(state, sessionUser.correo);
+        const targetEmpId = Array.from(roleMap.keys())[0];
+        if (targetEmpId) {
+          backendStorage.saveState({
+            ...state,
+            bitacora: [
+              {
+                id: `bit-pwd-${Date.now()}`,
+                empresa_id: targetEmpId,
+                usuario: sessionUser.nombre,
+                rol: roleMap.get(targetEmpId) || sessionUser.rol,
+                modulo: 'Acceso y Seguridad',
+                accion: 'Cambio de contraseña',
+                detalle: `Contraseña actualizada correctamente para ${sessionUser.correo}.`,
+                fecha: new Date().toISOString(),
+              },
+              ...state.bitacora,
+            ],
+          });
+        }
       } catch {
         // ignore
       }
@@ -297,18 +378,27 @@ export async function handleApiRequest(
       return true;
     }
 
-    // 2. GET /api/state — Estado completo del repositorio fiscal desde el servidor
+    // 2. GET /api/state — Estado fiscal estrictamente filtrado por empresas y rol del usuario
     if (method === 'GET' && pathname === '/api/state') {
-      const state = backendStorage.loadState();
+      const fullState = backendStorage.loadState();
+      const scopedState = filterStateForUser(fullState, sessionUser);
+      const rawStats = backendStorage.getStorageStats();
       sendJson(res, 200, {
         ok: true,
-        state,
-        storage: backendStorage.getStorageStats(),
+        state: scopedState,
+        storage: {
+          driver: rawStats.driver,
+          dbPath: 'almacenamiento-servidor',
+          fileSizeBytes: rawStats.fileSizeBytes,
+          lastModified: rawStats.lastModified,
+          totalCfdis: scopedState.cfdis.length,
+          totalEmpresas: scopedState.empresas.length,
+        },
       });
       return true;
     }
 
-    // 3. PUT /api/state — Sincronización de estado completo con control RBAC
+    // 3. PUT /api/state — Fusión aislada por empresa + RBAC estricto + bitácora append-only
     if (method === 'PUT' && pathname === '/api/state') {
       const raw = await readRequestBody(req);
       const body = safeJsonParse<{ state?: FiscalDatabaseState }>(raw);
@@ -316,29 +406,61 @@ export async function handleApiRequest(
         sendJson(res, 400, { ok: false, error: 'Estructura de estado fiscal inválida.' });
         return true;
       }
-      const saved = backendStorage.saveState(body.state);
-      sendJson(res, 200, { ok: true, state: saved });
-      return true;
-    }
 
-    // 4. POST /api/reset — Restaurar datos semilla en el servidor
-    if (method === 'POST' && pathname === '/api/reset') {
-      const state = backendStorage.resetState();
-      sendJson(res, 200, { ok: true, state });
-      return true;
-    }
-
-    // 5. GET /api/efirma/status — Consultar estado de bóveda criptográfica AES-256-GCM
-    if (method === 'GET' && pathname === '/api/efirma/status') {
-      const rbac = assertRoleAccess(actor.rol, ['propietario']);
-      if (!rbac.ok) {
-        sendJson(res, 403, { ok: false, error: rbac.error });
+      const currentState = backendStorage.loadState();
+      const merged = mergeScopedStateUpdate(currentState, body.state, sessionUser);
+      if (!merged.ok) {
+        sendJson(res, merged.statusCode, { ok: false, error: merged.error });
         return true;
       }
-      const empresaId = parsedUrl.searchParams.get('empresaId') || actor.empresaId;
+
+      const saved = backendStorage.saveState(merged.nextState);
+      sendJson(res, 200, { ok: true, state: filterStateForUser(saved, sessionUser) });
+      return true;
+    }
+
+    // 4. POST /api/reset — Restaurar datos iniciales (únicamente propietario global de todas las empresas)
+    if (method === 'POST' && pathname === '/api/reset') {
+      const currentState = backendStorage.loadState();
+      const roleMap = getAuthorizedEmpresaRoles(currentState, sessionUser.correo);
+      const isGlobalOwner =
+        sessionUser.rol === 'propietario' &&
+        currentState.empresas.length > 0 &&
+        currentState.empresas.every((e) => roleMap.get(e.id) === 'propietario');
+
+      if (!isGlobalOwner) {
+        sendJson(res, 403, {
+          ok: false,
+          error:
+            'Acceso denegado: solo el propietario general de todas las empresas puede restaurar la base fiscal.',
+        });
+        return true;
+      }
+
+      const resetFull = backendStorage.resetState();
+      sendJson(res, 200, { ok: true, state: filterStateForUser(resetFull, sessionUser) });
+      return true;
+    }
+
+    // 5. GET /api/efirma/status — Estado de bóveda AES-256-GCM (aislado por empresa, solo propietario)
+    if (method === 'GET' && pathname === '/api/efirma/status') {
+      const empInput = readRequestedEmpresaId(req, parsedUrl.searchParams.get('empresaId'));
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
+        return true;
+      }
+
       const state = backendStorage.loadState();
-      const efirmaMeta = state.efirmas.find((e) => e.empresa_id === empresaId) || null;
-      const vaultStatus = getPublicVaultStatus(empresaId);
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
+      const efirmaMeta = state.efirmas.find((e) => e.empresa_id === access.empresaId) || null;
+      const vaultStatus = getPublicVaultStatus(access.empresaId);
       sendJson(res, 200, {
         ok: true,
         efirma: efirmaMeta,
@@ -347,17 +469,11 @@ export async function handleApiRequest(
       return true;
     }
 
-    // 6. POST /api/efirma/upload — Validación X.509 real (.cer/.key) y cifrado AES-256-GCM en Bóveda
+    // 6. POST /api/efirma/upload — Validación criptográfica real X.509 + PKCS#8 (.cer/.key)
     if (method === 'POST' && pathname === '/api/efirma/upload') {
-      const rbac = assertRoleAccess(actor.rol, ['propietario']);
-      if (!rbac.ok) {
-        sendJson(res, 403, { ok: false, error: rbac.error });
-        return true;
-      }
-
       const raw = await readRequestBody(req);
       const body = safeJsonParse<{
-        empresaId: string;
+        empresaId?: string;
         cerFileName: string;
         cerBase64: string;
         keyFileName: string;
@@ -373,11 +489,22 @@ export async function handleApiRequest(
         return true;
       }
 
-      const state = backendStorage.loadState();
-      const emp =
-        state.empresas.find((e) => e.id === (body.empresaId || actor.empresaId)) ||
-        state.empresas[0];
+      const empInput = readRequestedEmpresaId(req, body.empresaId);
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
+        return true;
+      }
 
+      const state = backendStorage.loadState();
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
+      const emp = access.empresa;
       const validation = inspectAndValidateEfirma({
         empresaId: emp.id,
         expectedRfc: emp.rfc,
@@ -386,7 +513,7 @@ export async function handleApiRequest(
         keyFileName: body.keyFileName,
         keyBase64: body.keyBase64 || '',
         password: body.password,
-        usuario: actor.usuario,
+        usuario: sessionUser.nombre,
       });
 
       if (!validation.ok) {
@@ -396,37 +523,36 @@ export async function handleApiRequest(
 
       const nowIso = new Date().toISOString();
       const remDays = daysUntil(validation.vigenciaHasta!);
-      const estadoEfirma =
-        remDays < 0 ? 'vencida' : remDays <= 30 ? 'por_vencer' : 'activa';
+      const estadoEfirma = remDays < 0 ? 'vencida' : remDays <= 30 ? 'por_vencer' : 'activa';
       const existingEfirma = state.efirmas.find((e) => e.empresa_id === emp.id);
       const updatedEfirmas = existingEfirma
         ? state.efirmas.map((e) =>
-          e.empresa_id === emp.id
-            ? {
-              ...e,
+            e.empresa_id === emp.id
+              ? {
+                  ...e,
+                  numero_serie: validation.numeroSerie!,
+                  rfc_certificado: validation.rfcCertificado!,
+                  vigencia_desde: validation.vigenciaDesde!,
+                  vigencia_hasta: validation.vigenciaHasta!,
+                  estado: estadoEfirma as 'activa' | 'por_vencer' | 'vencida',
+                  actualizada_en: nowIso,
+                  actualizada_por: sessionUser.nombre,
+                }
+              : e,
+          )
+        : [
+            ...state.efirmas,
+            {
+              empresa_id: emp.id,
               numero_serie: validation.numeroSerie!,
               rfc_certificado: validation.rfcCertificado!,
               vigencia_desde: validation.vigenciaDesde!,
               vigencia_hasta: validation.vigenciaHasta!,
               estado: estadoEfirma as 'activa' | 'por_vencer' | 'vencida',
               actualizada_en: nowIso,
-              actualizada_por: actor.usuario,
-            }
-            : e,
-        )
-        : [
-          ...state.efirmas,
-          {
-            empresa_id: emp.id,
-            numero_serie: validation.numeroSerie!,
-            rfc_certificado: validation.rfcCertificado!,
-            vigencia_desde: validation.vigenciaDesde!,
-            vigencia_hasta: validation.vigenciaHasta!,
-            estado: estadoEfirma as 'activa' | 'por_vencer' | 'vencida',
-            actualizada_en: nowIso,
-            actualizada_por: actor.usuario,
-          },
-        ];
+              actualizada_por: sessionUser.nombre,
+            },
+          ];
 
       const nextState: FiscalDatabaseState = {
         ...state,
@@ -435,11 +561,11 @@ export async function handleApiRequest(
           {
             id: `bit-ef-srv-${Date.now()}`,
             empresa_id: emp.id,
-            usuario: actor.usuario,
+            usuario: sessionUser.nombre,
             rol: 'propietario',
-            modulo: 'e.firma (Bóveda Backend)',
-            accion: 'Cifrado AES-256-GCM de e.firma (.cer/.key)',
-            detalle: `Serie ${validation.numeroSerie} validada (X.509 FIEL) y resguardada en Bóveda AES-256-GCM hasta ${validation.vigenciaHasta}`,
+            modulo: 'e.firma',
+            accion: 'Actualización y validación de e.firma (.cer/.key)',
+            detalle: `Serie ${validation.numeroSerie} verificada criptográficamente (par .cer/.key válido) con vigencia hasta ${validation.vigenciaHasta}.`,
             fecha: nowIso,
           },
           ...state.bitacora,
@@ -451,28 +577,35 @@ export async function handleApiRequest(
         ok: true,
         validation,
         vault: getPublicVaultStatus(emp.id),
-        state: saved,
+        state: filterStateForUser(saved, sessionUser),
       });
       return true;
     }
 
-    // 7. POST /api/sat/sync — Ejecutar sincronización Web Service SAT en el Backend
+    // 7. POST /api/sat/sync — Sincronización SAT aislada por empresa (propietario/contador)
     if (method === 'POST' && pathname === '/api/sat/sync') {
-      const rbac = assertRoleAccess(actor.rol, ['propietario', 'contador']);
-      if (!rbac.ok) {
-        sendJson(res, 403, { ok: false, error: rbac.error });
+      const raw = await readRequestBody(req);
+      const body = safeJsonParse<{ empresaId?: string }>(raw);
+      const empInput = readRequestedEmpresaId(req, body?.empresaId);
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
         return true;
       }
 
-      const raw = await readRequestBody(req);
-      const body = safeJsonParse<{ empresaId?: string }>(raw);
-      const targetEmpresaId = body?.empresaId || actor.empresaId;
       const state = backendStorage.loadState();
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+        'contador',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
 
       const { nextState, newLog, soapPreview } = executeSatSyncJobOnServer(
         state,
-        targetEmpresaId,
-        actor.usuario,
+        access.empresaId,
+        sessionUser.nombre,
       );
       const saved = backendStorage.saveState(nextState);
 
@@ -480,53 +613,76 @@ export async function handleApiRequest(
         ok: true,
         log: newLog,
         soapPreview,
-        state: saved,
+        state: filterStateForUser(saved, sessionUser),
       });
       return true;
     }
 
-    // 8. GET /api/sat/soap-preview — Inspeccionar sobre SOAP XML-DSig generado por el Backend
+    // 8. GET /api/sat/soap-preview — Sobre SOAP aislado por empresa (propietario/contador)
     if (method === 'GET' && pathname === '/api/sat/soap-preview') {
-      const empresaId = parsedUrl.searchParams.get('empresaId') || actor.empresaId;
+      const empInput = readRequestedEmpresaId(req, parsedUrl.searchParams.get('empresaId'));
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
+        return true;
+      }
+
       const state = backendStorage.loadState();
-      const emp = state.empresas.find((e) => e.id === empresaId) || state.empresas[0];
-      const soapPreview = buildSatAuthSoapEnvelope(emp.id, emp.rfc);
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+        'contador',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
+      const soapPreview = buildSatAuthSoapEnvelope(access.empresa.id, access.empresa.rfc);
       sendJson(res, 200, { ok: true, soapPreview });
       return true;
     }
 
-    // 9. POST /api/sat/historical — Programar descarga histórica multianual en Backend
+    // 9. POST /api/sat/historical — Descarga histórica aislada por empresa (propietario/contador)
     if (method === 'POST' && pathname === '/api/sat/historical') {
-      const rbac = assertRoleAccess(actor.rol, ['propietario', 'contador']);
-      if (!rbac.ok) {
-        sendJson(res, 403, { ok: false, error: rbac.error });
+      const raw = await readRequestBody(req);
+      const body = safeJsonParse<{ empresaId?: string; years?: number[] }>(raw);
+      const empInput = readRequestedEmpresaId(req, body?.empresaId);
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
         return true;
       }
 
-      const raw = await readRequestBody(req);
-      const body = safeJsonParse<{ empresaId?: string; years?: number[] }>(raw);
-      const years = Array.isArray(body?.years) && body.years.length > 0 ? body.years : [2025];
       const state = backendStorage.loadState();
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+        'contador',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
+      const validYears = Array.isArray(body?.years)
+        ? body.years.filter((y) => Number.isInteger(y) && y >= 2015 && y <= 2030)
+        : [];
+      const years = validYears.length > 0 ? validYears : [2025];
 
       const { nextState, requestsCreated } = executeHistoricalSatJobOnServer(
         state,
-        body?.empresaId || actor.empresaId,
+        access.empresaId,
         years,
-        actor.usuario,
+        sessionUser.nombre,
       );
       const saved = backendStorage.saveState(nextState);
-      sendJson(res, 200, { ok: true, requestsCreated, state: saved });
+      sendJson(res, 200, {
+        ok: true,
+        requestsCreated,
+        state: filterStateForUser(saved, sessionUser),
+      });
       return true;
     }
 
-    // 10. POST /api/sat/import-batch — Upsert masivo de lote de CFDIs en servidor
+    // 10. POST /api/sat/import-batch — Importación masiva aislada por empresa
     if (method === 'POST' && pathname === '/api/sat/import-batch') {
-      const rbac = assertRoleAccess(actor.rol, ['propietario', 'contador', 'pagos']);
-      if (!rbac.ok) {
-        sendJson(res, 403, { ok: false, error: rbac.error });
-        return true;
-      }
-
       const raw = await readRequestBody(req);
       const body = safeJsonParse<{
         empresaId?: string;
@@ -539,13 +695,29 @@ export async function handleApiRequest(
         return true;
       }
 
+      const empInput = readRequestedEmpresaId(req, body.empresaId);
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
+        return true;
+      }
+
       const state = backendStorage.loadState();
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+        'contador',
+        'pagos',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
       const result = importCfdiBatchOnServer(
         state,
-        body.empresaId || actor.empresaId,
+        access.empresaId,
         body.items,
         body.sourceLabel || 'Carga masiva XML/ZIP',
-        actor.usuario,
+        sessionUser.nombre,
       );
       const saved = backendStorage.saveState(result.nextState);
       sendJson(res, 200, {
@@ -553,25 +725,38 @@ export async function handleApiRequest(
         importedCount: result.importedCount,
         emitidosCount: result.emitidosCount,
         recibidosCount: result.recibidosCount,
-        state: saved,
+        state: filterStateForUser(saved, sessionUser),
       });
       return true;
     }
 
-    // 11. GET /api/calculos/fiscal — Cálculos ejecutados en el servidor (IVA, ISR, Visor, Indicadores)
+    // 11. GET /api/calculos/fiscal — Cálculos fiscales aislados por empresa (propietario/contador/consulta)
     if (method === 'GET' && pathname === '/api/calculos/fiscal') {
-      const empresaId = parsedUrl.searchParams.get('empresaId') || actor.empresaId;
-      const periodo = parsedUrl.searchParams.get('periodo') || '2026-10';
-      const year = periodo.slice(0, 4);
+      const empInput = readRequestedEmpresaId(req, parsedUrl.searchParams.get('empresaId'));
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
+        return true;
+      }
 
-      const waf = inspectPayloadForThreats([empresaId, periodo]);
-      if (!waf.safe) {
-        sendJson(res, 403, { ok: false, error: waf.reason });
+      const periodo = (parsedUrl.searchParams.get('periodo') || '2026-10').trim();
+      if (!SAFE_PERIODO_RE.test(periodo)) {
+        sendJson(res, 400, { ok: false, error: 'Formato de periodo inválido (esperado YYYY-MM).' });
         return true;
       }
 
       const state = backendStorage.loadState();
-      const emp = state.empresas.find((e) => e.id === empresaId) || state.empresas[0];
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+        'contador',
+        'consulta',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
+      const emp = access.empresa;
+      const year = periodo.slice(0, 4);
 
       sendJson(res, 200, {
         ok: true,
@@ -587,33 +772,50 @@ export async function handleApiRequest(
       return true;
     }
 
-    // 12. POST /api/aspel/sync — Sincronización contable Aspel SAE en el servidor
+    // 12. POST /api/aspel/sync — Sincronización contable Aspel SAE aislada por empresa
     if (method === 'POST' && pathname === '/api/aspel/sync') {
-      const rbac = assertRoleAccess(actor.rol, ['propietario', 'contador']);
-      if (!rbac.ok) {
-        sendJson(res, 403, { ok: false, error: rbac.error });
+      const raw = await readRequestBody(req);
+      const body = safeJsonParse<{ empresaId?: string }>(raw);
+      const empInput = readRequestedEmpresaId(req, body?.empresaId);
+      if (!empInput.ok) {
+        sendJson(res, 400, { ok: false, error: empInput.error });
         return true;
       }
 
-      const raw = await readRequestBody(req);
-      const body = safeJsonParse<{ empresaId?: string }>(raw);
       const state = backendStorage.loadState();
+      const access = resolveAuthorizedTargetEmpresa(state, sessionUser, empInput.empresaId, [
+        'propietario',
+        'contador',
+      ]);
+      if (!access.ok) {
+        sendJson(res, access.statusCode, { ok: false, error: access.error });
+        return true;
+      }
+
       const { nextState, linkedCount } = syncAspelPendingOnServer(
         state,
-        body?.empresaId || actor.empresaId,
-        actor.usuario,
+        access.empresaId,
+        sessionUser.nombre,
       );
       const saved = backendStorage.saveState(nextState);
-      sendJson(res, 200, { ok: true, linkedCount, state: saved });
+      sendJson(res, 200, {
+        ok: true,
+        linkedCount,
+        state: filterStateForUser(saved, sessionUser),
+      });
       return true;
     }
 
-    sendJson(res, 404, { ok: false, error: `Endpoint no encontrado: ${method} ${pathname}` });
+    sendJson(res, 404, { ok: false, error: 'Recurso no encontrado.' });
     return true;
   } catch (err) {
+    const safeMsg =
+      err instanceof Error && err.message.includes('excede el límite')
+        ? err.message
+        : 'Error interno al procesar la solicitud.';
     sendJson(res, 500, {
       ok: false,
-      error: err instanceof Error ? err.message : 'Error interno en el servidor backend.',
+      error: safeMsg,
     });
     return true;
   }

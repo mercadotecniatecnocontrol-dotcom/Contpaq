@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Cfdi,
   CfdiConcepto,
@@ -18,20 +18,18 @@ import type {
 } from '../types/fiscal';
 import {
   type AuthUserProfile,
+  type BackendActorHeaders,
   type BackendHealthStatus,
   type SatSoapPreviewResponse,
+  createEmptyFiscalState,
   fiscalRepository,
+  purgeLegacyClientStorage,
 } from '../services/fiscalRepository';
-import {
-  type AssistantMessage,
-  type AssistantSessionMemory,
-  runAssistantQuery,
+import type {
+  AssistantMessage,
+  AssistantSessionMemory,
 } from '../services/assistantEngine';
-import { PAGE_GUIDE_CATALOG } from '../services/pageGuideEngine';
-import {
-  analyzeUploadedFile,
-  type AnalyzedDocument,
-} from '../services/documentAnalyzer';
+import type { AnalyzedDocument } from '../services/documentAnalyzer';
 import { daysUntil } from '../utils/format';
 import {
   sanitizeEmailInput,
@@ -77,18 +75,30 @@ export interface SimulatedUserProfile {
   area: string;
 }
 
-export const NAYRA_PROFILE: SimulatedUserProfile = {
-  nombre: 'C.P. Nayra Mendoza',
-  correo: 'contabilidad@tecnocontrol.com.mx',
+const DEFAULT_USER_PROFILE: SimulatedUserProfile = {
+  nombre: 'Usuario',
+  correo: '',
   rol: 'propietario',
   area: 'Contabilidad y Fiscal',
 };
 
 export const ROLE_PROFILES: Record<RolEmpresa, SimulatedUserProfile> = {
-  propietario: { ...NAYRA_PROFILE, rol: 'propietario' },
-  contador: { ...NAYRA_PROFILE, rol: 'contador' },
-  consulta: { ...NAYRA_PROFILE, rol: 'consulta' },
-  pagos: { ...NAYRA_PROFILE, rol: 'pagos' },
+  propietario: { ...DEFAULT_USER_PROFILE, rol: 'propietario' },
+  contador: { ...DEFAULT_USER_PROFILE, rol: 'contador' },
+  consulta: { ...DEFAULT_USER_PROFILE, rol: 'consulta' },
+  pagos: { ...DEFAULT_USER_PROFILE, rol: 'pagos' },
+};
+
+const EMPTY_EMPRESA: Empresa = {
+  id: '',
+  rfc: '',
+  razon_social: '',
+  regimen: '',
+  regimen_descripcion: '',
+  tipo_persona: 'moral',
+  favorita: false,
+  ultimo_acceso: '',
+  codigo_postal: '',
 };
 
 const ROUTE_ALIASES: Record<string, FiscalRoute> = {
@@ -255,6 +265,8 @@ interface FiscalContextValue {
   backendHealth: BackendHealthStatus | null;
   authUser: AuthUserProfile | null;
   authLoading: boolean;
+  dataLoading: boolean;
+  reloadRemoteState: () => Promise<void>;
   authNotice: string | null;
   clearAuthNotice: () => void;
   login: (payload: {
@@ -288,10 +300,7 @@ const DEFAULT_NOTIF_PREFS: PreferenciasNotificacion = {
 
 export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [db, setDb] = useState<FiscalDatabaseState>(() => fiscalRepository.load());
-  const [activeEmpresaId, setActiveEmpresaId] = useState<string>(() => {
-    const saved = localStorage.getItem(PREFS_EMPRESA_KEY);
-    return saved || 'emp-hedma';
-  });
+  const [activeEmpresaId, setActiveEmpresaId] = useState<string>('');
   const [activeRoute, setActiveRoute] = useState<FiscalRoute>(() => parseHashRoute());
   const [previousRoute, setPreviousRoute] = useState<FiscalRoute>('dashboard');
   const [floatingAssistantOpen, setFloatingAssistantOpen] = useState<boolean>(false);
@@ -319,23 +328,29 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [backendHealth, setBackendHealth] = useState<BackendHealthStatus | null>(null);
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const actorRef = useRef<BackendActorHeaders | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
   }, []);
 
-  // Verificar sesión activa al iniciar el portal
+  // Verificar sesión activa al iniciar el portal (y purgar cualquier rastro local heredado)
   useEffect(() => {
     let active = true;
+    purgeLegacyClientStorage(false);
     void fiscalRepository.getSession().then((res) => {
       if (!active) return;
       setBackendOnline(res.online);
       if (res.authenticated && res.user) {
         setAuthUser(res.user);
         setRolSimuladoState(res.user.rol);
+        setDataLoading(true);
       } else {
         setAuthUser(null);
+        setDb(createEmptyFiscalState());
+        setDataLoading(false);
       }
       setAuthLoading(false);
     });
@@ -344,19 +359,58 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, []);
 
-  // Hidratar estado desde el servidor únicamente cuando existe sesión autenticada
-  useEffect(() => {
+  const reloadRemoteState = useCallback(async () => {
     if (!authUser) return;
-    let active = true;
-    const actor = {
+    setDataLoading(true);
+    const savedEmpresa = localStorage.getItem(PREFS_EMPRESA_KEY) || '';
+    const actor: BackendActorHeaders = {
       rol: authUser.rol,
       usuario: authUser.nombre,
-      empresaId: activeEmpresaId,
+      empresaId: activeEmpresaId || savedEmpresa,
+    };
+    const res = await fiscalRepository.fetchRemoteState(actor);
+    if (res.unauthorized) {
+      setDb(createEmptyFiscalState());
+      setAuthUser(null);
+      setDataLoading(false);
+      setAuthNotice('Tu sesión expiró. Inicia sesión nuevamente para continuar.');
+      return;
+    }
+    if (res.online && res.state) {
+      setDb(res.state);
+      setBackendOnline(true);
+      if (res.health) setBackendHealth(res.health);
+      const preferred =
+        res.state.empresas.find((e) => e.id === (activeEmpresaId || savedEmpresa))?.id ||
+        res.state.empresas[0]?.id ||
+        '';
+      setActiveEmpresaId(preferred);
+    }
+    setDataLoading(false);
+  }, [activeEmpresaId, authUser]);
+
+  // Hidratar estado desde el servidor únicamente cuando existe sesión autenticada
+  useEffect(() => {
+    if (!authUser) {
+      setDb(createEmptyFiscalState());
+      setBackendHealth(null);
+      setDataLoading(false);
+      return;
+    }
+    let active = true;
+    setDataLoading(true);
+    const savedEmpresa = localStorage.getItem(PREFS_EMPRESA_KEY) || '';
+    const actor: BackendActorHeaders = {
+      rol: authUser.rol,
+      usuario: authUser.nombre,
+      empresaId: savedEmpresa,
     };
     void fiscalRepository.fetchRemoteState(actor).then((res) => {
       if (!active) return;
       if (res.unauthorized) {
+        setDb(createEmptyFiscalState());
         setAuthUser(null);
+        setDataLoading(false);
         setAuthNotice('Tu sesión expiró. Inicia sesión nuevamente para continuar.');
         return;
       }
@@ -364,12 +418,18 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setDb(res.state);
         setBackendOnline(true);
         if (res.health) setBackendHealth(res.health);
+        const preferred =
+          res.state.empresas.find((e) => e.id === savedEmpresa)?.id ||
+          res.state.empresas[0]?.id ||
+          '';
+        setActiveEmpresaId(preferred);
       }
+      setDataLoading(false);
     });
     return () => {
       active = false;
     };
-  }, [activeEmpresaId, authUser]);
+  }, [authUser]);
 
   const login = useCallback(
     async (payload: { email: string; password: string; rememberMe?: boolean }) => {
@@ -378,6 +438,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!res.ok || !res.user) {
         return { ok: false, error: res.error || 'No fue posible iniciar sesión.' };
       }
+      setDataLoading(true);
       setAuthUser(res.user);
       setRolSimuladoState(res.user.rol);
       setBackendOnline(true);
@@ -389,13 +450,26 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const logout = useCallback(async (notice?: string) => {
     await fiscalRepository.logout();
+    purgeLegacyClientStorage(true);
+    try {
+      localStorage.removeItem(PREFS_EMPRESA_KEY);
+    } catch {
+      // ignore
+    }
     setAuthUser(null);
+    setDb(createEmptyFiscalState());
+    setBackendHealth(null);
+    setActiveEmpresaId('');
+    setDataLoading(false);
     setFloatingAssistantOpen(false);
     setSelectedCfdiUuid(null);
     setPdfCfdiUuid(null);
     setAssistantMessages([]);
     setAssistantMemory({});
     setAttachedDocs([]);
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
     if (notice) {
       setAuthNotice(notice);
     }
@@ -441,16 +515,8 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => window.clearTimeout(t);
   }, [toastMessage]);
 
-  const updateDb = useCallback((updater: (prev: FiscalDatabaseState) => FiscalDatabaseState) => {
-    setDb((prev) => {
-      const next = updater(prev);
-      fiscalRepository.save(next);
-      return next;
-    });
-  }, []);
-
   const activeEmpresa = useMemo(() => {
-    return db.empresas.find((e) => e.id === activeEmpresaId) || db.empresas[0];
+    return db.empresas.find((e) => e.id === activeEmpresaId) || db.empresas[0] || EMPTY_EMPRESA;
   }, [db.empresas, activeEmpresaId]);
 
   const currentUser: SimulatedUserProfile = useMemo(() => {
@@ -465,8 +531,27 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return ROLE_PROFILES[rolSimulado];
   }, [authUser, rolSimulado]);
 
-  // Sincronizar hash del navegador (#fiscal/...)
+  actorRef.current = authUser
+    ? {
+        rol: currentUser.rol,
+        usuario: currentUser.nombre,
+        empresaId: activeEmpresa.id,
+      }
+    : null;
+
+  const updateDb = useCallback((updater: (prev: FiscalDatabaseState) => FiscalDatabaseState) => {
+    const actor = actorRef.current;
+    if (!actor) return;
+    setDb((prev) => {
+      const next = updater(prev);
+      fiscalRepository.save(next, actor);
+      return next;
+    });
+  }, []);
+
+  // Sincronizar hash del navegador (#fiscal/...) únicamente con sesión iniciada
   useEffect(() => {
+    if (!authUser) return;
     if (!window.location.hash || !window.location.hash.startsWith('#fiscal/')) {
       window.location.hash = `#fiscal/${activeRoute}`;
     }
@@ -481,7 +566,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [authUser]);
 
   const navigate = useCallback((route: FiscalRoute, preset?: RouteFilterPreset) => {
     const safeRoute = normalizeFiscalRoute(route, 'dashboard');
@@ -1370,6 +1455,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let nextContextDocs = attachedDocs;
 
       if (fileList.length > 0) {
+        const { analyzeUploadedFile } = await import('../services/documentAnalyzer');
         newlyAnalyzed = await Promise.all(
           fileList.map((f) => analyzeUploadedFile(f, db, activeEmpresa)),
         );
@@ -1385,6 +1471,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         await new Promise((r) => window.setTimeout(r, 280));
       }
 
+      const { runAssistantQuery } = await import('../services/assistantEngine');
       const { message: reply, nextMemory } = runAssistantQuery(
         effectivePrompt,
         db,
@@ -1433,6 +1520,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const explainCurrentPageWithAssistant = useCallback(
     async (targetRoute?: FiscalRoute) => {
+      const { PAGE_GUIDE_CATALOG } = await import('../services/pageGuideEngine');
       const routeToExplain = targetRoute || activeRoute;
       const guide = PAGE_GUIDE_CATALOG[routeToExplain] || PAGE_GUIDE_CATALOG.dashboard;
       if (activeRoute !== 'asistente') {
@@ -1482,15 +1570,25 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [activeEmpresa, showToast, updateDb]);
 
   const resetDemoData = useCallback(() => {
-    const fresh = fiscalRepository.reset({
-      rol: currentUser.rol,
-      usuario: currentUser.nombre,
-      empresaId: activeEmpresa.id,
-    });
-    setDb(fresh);
-    setActiveEmpresaId('emp-hedma');
-    localStorage.setItem(PREFS_EMPRESA_KEY, 'emp-hedma');
-    showToast('Datos iniciales restaurados correctamente');
+    void fiscalRepository
+      .reset({
+        rol: currentUser.rol,
+        usuario: currentUser.nombre,
+        empresaId: activeEmpresa.id,
+      })
+      .then((fresh) => {
+        if (!fresh) {
+          showToast('No fue posible restaurar los datos iniciales en el servidor');
+          return;
+        }
+        setDb(fresh);
+        const firstId = fresh.empresas[0]?.id || '';
+        setActiveEmpresaId(firstId);
+        if (firstId) {
+          localStorage.setItem(PREFS_EMPRESA_KEY, firstId);
+        }
+        showToast('Datos iniciales restaurados correctamente');
+      });
   }, [activeEmpresa.id, currentUser.nombre, currentUser.rol, showToast]);
 
   const uploadEfirmaToServerVault = useCallback(
@@ -1600,6 +1698,8 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         backendHealth,
         authUser,
         authLoading,
+        dataLoading,
+        reloadRemoteState,
         authNotice,
         clearAuthNotice: () => setAuthNotice(null),
         login,

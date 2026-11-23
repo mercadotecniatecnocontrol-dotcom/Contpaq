@@ -16,7 +16,7 @@ import { useFiscal } from '../context/FiscalContext';
 export const LoginPage: React.FC = () => {
   const { login, authNotice, clearAuthNotice } = useFiscal();
 
-  const [email, setEmail] = useState('contabilidad@tecnocontrol.com.mx');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -126,7 +126,7 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <div className="relative z-10 flex items-center justify-between border-t border-white/15 pt-5 text-[11px] text-blue-100/75">
-          <span>HEDMA TECNOCONTROL S.A. DE C.V.</span>
+          <span>Tecnocontrol · Módulo Fiscal</span>
           <span>Uso interno autorizado</span>
         </div>
       </aside>
@@ -196,7 +196,7 @@ export const LoginPage: React.FC = () => {
                       autoComplete="username"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="contabilidad@tecnocontrol.com.mx"
+                      placeholder="usuario@empresa.com.mx"
                       className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2.5 pr-3.5 pl-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/15"
                     />
                   </div>

@@ -222,7 +222,7 @@ export const IndicadoresPage: React.FC = () => {
         Emitidos: r.indicador.aplica_emitidos ? 'Sí' : 'No',
         Recibidos: r.indicador.aplica_recibidos ? 'Sí' : 'No',
         [`Periodo (${periodo})`]: r.conteo_periodo,
-        'Ejercicio 2026': r.conteo_ejercicio,
+        [`Ejercicio ${selectedYear}`]: r.conteo_ejercicio,
         Regla: r.indicador.descripcion,
       })),
       `Indicadores_Fiscales_${activeEmpresa.rfc}`,
@@ -308,6 +308,38 @@ export const IndicadoresPage: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
+              <select
+                name="ind-fin-ejercicio"
+                aria-label="Ejercicio financiero"
+                value={selectedYear}
+                onChange={(e) => {
+                  const y = e.target.value;
+                  setSelectedYear(y);
+                  setPeriodo(`${y}-${periodo.slice(5, 7)}`);
+                }}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-800"
+              >
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                name="ind-fin-periodo"
+                aria-label="Mes financiero"
+                value={periodo}
+                onChange={(e) => setPeriodo(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-800"
+              >
+                {mesesAnio.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.largo}
+                  </option>
+                ))}
+              </select>
+
               <select
                 name="ind-moneda-vista"
                 aria-label="Moneda de visualización"
@@ -928,7 +960,7 @@ export const IndicadoresPage: React.FC = () => {
                       </p>
                     </div>
                     <div>
-                      <span className="text-[11px] text-slate-500">Ejercicio 2026</span>
+                      <span className="text-[11px] text-slate-500">Ejercicio {selectedYear}</span>
                       <p
                         className={`text-sm font-bold tabular-nums ${res.conteo_ejercicio > 0 ? 'text-amber-700' : 'text-emerald-700'
                           }`}
@@ -997,7 +1029,7 @@ export const IndicadoresPage: React.FC = () => {
                   <div className="py-10 text-center">
                     <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" />
                     <p className="mt-2 text-sm font-semibold text-slate-800">
-                      Sin incidencias detectadas en 2026
+                      Sin incidencias detectadas en {selectedYear}
                     </p>
                   </div>
                 ) : (

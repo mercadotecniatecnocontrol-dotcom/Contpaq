@@ -19,7 +19,6 @@ export const EfirmaPage: React.FC = () => {
   const {
     db,
     activeEmpresa,
-    updateEfirma,
     uploadEfirmaToServerVault,
     backendHealth,
   } = useFiscal();
@@ -64,25 +63,11 @@ export const EfirmaPage: React.FC = () => {
       });
 
       if (!vaultRes.ok) {
-        // Si el backend rechazó el archivo (ej. CSD en lugar de FIEL o RFC distinto), mostramos el error del servidor
-        if (vaultRes.error && !vaultRes.error.includes('Error de red')) {
-          setErrorMsg(vaultRes.error);
-          return;
-        }
-        // Respaldo local únicamente si el servidor está fuera de línea
-        const lowerName = cerFile.name.toLowerCase();
-        if (lowerName.includes('csd') || lowerName.includes('sello')) {
-          setErrorMsg(
-            'El certificado detectado corresponde a un Sello Digital (CSD). La descarga masiva del SAT requiere e.firma (FIEL).',
-          );
-          return;
-        }
-        const randomSerial = `000010000005${Math.floor(10000000 + Math.random() * 89999999)}`;
-        updateEfirma({
-          numero_serie: randomSerial,
-          vigencia_desde: '2026-11-19',
-          vigencia_hasta: '2030-11-19',
-        });
+        setErrorMsg(
+          vaultRes.error ||
+            'No fue posible validar criptográficamente los archivos de la e.firma (.cer y .key).',
+        );
+        return;
       }
 
       // Limpiar inmediatamente de memoria (jamás se guarda .key ni password en navegador)

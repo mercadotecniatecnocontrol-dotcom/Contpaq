@@ -17,6 +17,9 @@ import {
   CATALOGO_TIPO_CFDI,
   formatDateTime,
   formatShortDate,
+  getAvailableYears,
+  getLastDayOfMonth,
+  getMesesForYear,
   shortUuid,
 } from '../utils/format';
 import { exportToExcel } from '../utils/exportExcel';
@@ -44,7 +47,20 @@ export const VisorSatPage: React.FC = () => {
   const [estatusTab, setEstatusTab] = useState<'todos' | 'vigente' | 'cancelado'>('todos');
   const [soloDiferencias, setSoloDiferencias] = useState(false);
 
-  const activePeriodo = fechaFin.slice(0, 7) || '2026-11';
+  const availableYears = useMemo(
+    () => getAvailableYears(db.cfdis.filter((c) => c.empresa_id === activeEmpresa.id)),
+    [db.cfdis, activeEmpresa.id],
+  );
+  const selectedYear = fechaFin.slice(0, 4) || availableYears[0] || '2026';
+  const mesesAnio = useMemo(() => getMesesForYear(selectedYear), [selectedYear]);
+  const selectedMonthValue =
+    fechaIni.slice(0, 7) === fechaFin.slice(0, 7)
+      ? fechaIni.slice(0, 7)
+      : fechaIni === `${selectedYear}-01-01` && fechaFin === `${selectedYear}-12-31`
+        ? 'YEAR'
+        : 'CUSTOM';
+
+  const activePeriodo = fechaFin.slice(0, 7) || `${selectedYear}-11`;
 
   const auditoria = useMemo(
     () => getVisorSatAuditoria(db, activeEmpresa, activePeriodo),
@@ -194,7 +210,60 @@ export const VisorSatPage: React.FC = () => {
         </div>
 
         {/* Filtros */}
-        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-xs sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-xs sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          <div>
+            <label className="mb-1 block font-semibold text-slate-600">Ejercicio</label>
+            <select
+              name="visor-ejercicio"
+              aria-label="Ejercicio fiscal"
+              value={selectedYear}
+              onChange={(e) => {
+                const y = e.target.value;
+                if (selectedMonthValue === 'YEAR') {
+                  setFechaIni(`${y}-01-01`);
+                  setFechaFin(`${y}-12-31`);
+                } else {
+                  const mm = fechaFin.slice(5, 7) || '11';
+                  setFechaIni(`${y}-${mm}-01`);
+                  setFechaFin(getLastDayOfMonth(`${y}-${mm}`));
+                }
+              }}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-800"
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block font-semibold text-slate-600">Mes</label>
+            <select
+              name="visor-mes"
+              aria-label="Mes del ejercicio"
+              value={selectedMonthValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'YEAR') {
+                  setFechaIni(`${selectedYear}-01-01`);
+                  setFechaFin(`${selectedYear}-12-31`);
+                } else if (v !== 'CUSTOM') {
+                  setFechaIni(`${v}-01`);
+                  setFechaFin(getLastDayOfMonth(v));
+                }
+              }}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-800"
+            >
+              {mesesAnio.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.largo}
+                </option>
+              ))}
+              <option value="YEAR">Todo {selectedYear}</option>
+              {selectedMonthValue === 'CUSTOM' && <option value="CUSTOM">Rango personalizado</option>}
+            </select>
+          </div>
           <div>
             <label className="mb-1 block font-semibold text-slate-600">Desde</label>
             <input
@@ -266,22 +335,22 @@ export const VisorSatPage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                setFechaIni('2026-10-01');
-                setFechaFin('2026-10-31');
+                setFechaIni(`${selectedYear}-10-01`);
+                setFechaFin(getLastDayOfMonth(`${selectedYear}-10`));
               }}
               className="flex-1 rounded-xl bg-slate-100 py-1.5 font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
             >
-              Oct (0 dif.)
+              Oct {selectedYear}
             </button>
             <button
               type="button"
               onClick={() => {
-                setFechaIni('2026-11-01');
-                setFechaFin('2026-11-30');
+                setFechaIni(`${selectedYear}-11-01`);
+                setFechaFin(getLastDayOfMonth(`${selectedYear}-11`));
               }}
               className="flex-1 rounded-xl bg-slate-100 py-1.5 font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
             >
-              Nov 2026
+              Nov {selectedYear}
             </button>
           </div>
         </div>

@@ -6,32 +6,46 @@ import type {
   FiscalDatabaseState,
   RolEmpresa,
 } from '../types/fiscal';
-import { createInitialSeed } from '../data/mockSeed';
-import { safeJsonParse, stripSensitiveSecrets } from '../utils/security';
+import { stripSensitiveSecrets } from '../utils/security';
 
-const STORAGE_KEY = 'tecnocontrol_fiscal_db_v1';
+const LEGACY_STORAGE_KEY = 'tecnocontrol_fiscal_db_v1';
+const LEGACY_CHAT_HISTORY_KEY = 'tecnocontrol_assistant_history_v1';
 const API_BASE = '/api';
 
-const LEGACY_DEMO_USER_EMAILS = new Set([
-  'direccion@tecnocontrol.com.mx',
-  'pagos@tecnocontrol.com.mx',
-  'gerencia.admin@tecnocontrol.com.mx',
-  'aux.contable@tecnocontrol.com.mx',
-]);
-
-function normalizeSingleNayraProfile(state: FiscalDatabaseState): FiscalDatabaseState {
-  if (!Array.isArray(state.usuarios)) return state;
-  const cleanedUsers = state.usuarios
-    .filter((u) => !LEGACY_DEMO_USER_EMAILS.has(u.correo.toLowerCase()))
-    .map((u) =>
-      u.correo.toLowerCase() === 'contabilidad@tecnocontrol.com.mx'
-        ? { ...u, nombre: 'C.P. Nayra Mendoza', rol: 'propietario' as const }
-        : u,
-    );
+export function createEmptyFiscalState(): FiscalDatabaseState {
   return {
-    ...state,
-    usuarios: cleanedUsers,
+    empresas: [],
+    efirmas: [],
+    usuarios: [],
+    descargas: [],
+    cfdis: [],
+    conceptos: [],
+    relaciones: [],
+    pagos: [],
+    ajustes: [],
+    totales_sat: [],
+    documentos: [],
+    indicadores_custom: [],
+    grupos_indicadores: [],
+    aspel_configs: [],
+    contable_logs: [],
+    consumos: [],
+    notificaciones: [],
+    bitacora: [],
+    lista_efos: [],
+    fecha_corte_sat: '',
   };
+}
+
+export function purgeLegacyClientStorage(includeChatHistory = false): void {
+  try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    if (includeChatHistory) {
+      localStorage.removeItem(LEGACY_CHAT_HISTORY_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
 }
 
 export interface BackendActorHeaders {
@@ -92,8 +106,8 @@ function buildHeaders(actor?: BackendActorHeaders): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     'x-fiscal-role': actor?.rol || 'propietario',
-    'x-fiscal-user': encodeURIComponent(actor?.usuario || 'C.P. Nayra Mendoza'),
-    'x-fiscal-empresa': actor?.empresaId || 'emp-hedma',
+    'x-fiscal-user': encodeURIComponent(actor?.usuario || ''),
+    'x-fiscal-empresa': actor?.empresaId || '',
   };
 }
 
@@ -121,7 +135,7 @@ export interface FiscalDataRepository {
   }): Promise<{ ok: boolean; error?: string }>;
   load(): FiscalDatabaseState;
   save(state: FiscalDatabaseState, actor?: BackendActorHeaders): void;
-  reset(actor?: BackendActorHeaders): FiscalDatabaseState;
+  reset(actor?: BackendActorHeaders): Promise<FiscalDatabaseState | null>;
   fetchRemoteState(actor?: BackendActorHeaders): Promise<{
     state: FiscalDatabaseState | null;
     online: boolean;
@@ -278,59 +292,39 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
   }
 
   load(): FiscalDatabaseState {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        const seed = createInitialSeed();
-        this.saveLocalOnly(seed);
-        return seed;
-      }
-      const parsed = safeJsonParse<FiscalDatabaseState>(raw);
-      if (!parsed || !Array.isArray(parsed.empresas) || parsed.empresas.length === 0) {
-        const seed = createInitialSeed();
-        this.saveLocalOnly(seed);
-        return seed;
-      }
-      const normalized = normalizeSingleNayraProfile(parsed);
-      this.saveLocalOnly(normalized);
-      return normalized;
-    } catch {
-      return createInitialSeed();
-    }
-  }
-
-  private saveLocalOnly(state: FiscalDatabaseState): void {
-    try {
-      const sanitized = stripSensitiveSecrets(normalizeSingleNayraProfile(state));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
-    } catch {
-      // ignore quota errors
-    }
+    // Nunca almacenar ni inicializar datos fiscales en localStorage antes de autenticar
+    purgeLegacyClientStorage(false);
+    return createEmptyFiscalState();
   }
 
   save(state: FiscalDatabaseState, actor?: BackendActorHeaders): void {
-    const normalized = normalizeSingleNayraProfile(state);
-    this.saveLocalOnly(normalized);
-    // Sincronizar de forma asíncrona con el servidor (/api/state)
+    // Persistir exclusivamente en el servidor autenticado (/api/state)
     void fetch(`${API_BASE}/state`, {
       method: 'PUT',
       credentials: 'same-origin',
       headers: buildHeaders(actor),
-      body: JSON.stringify({ state: stripSensitiveSecrets(normalized) }),
+      body: JSON.stringify({ state: stripSensitiveSecrets(state) }),
     }).catch(() => {
-      // Respaldo transparente si se ejecuta desconectado
+      // Ignorar fallo transitorio de red
     });
   }
 
-  reset(actor?: BackendActorHeaders): FiscalDatabaseState {
-    const seed = createInitialSeed();
-    this.saveLocalOnly(seed);
-    void fetch(`${API_BASE}/reset`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: buildHeaders(actor),
-    }).catch(() => {});
-    return seed;
+  async reset(actor?: BackendActorHeaders): Promise<FiscalDatabaseState | null> {
+    try {
+      const res = await fetch(`${API_BASE}/reset`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: buildHeaders(actor),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        ok: boolean;
+        state?: FiscalDatabaseState;
+      };
+      return data.ok && data.state ? data.state : null;
+    } catch {
+      return null;
+    }
   }
 
   async fetchRemoteState(actor?: BackendActorHeaders) {
@@ -354,9 +348,7 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
         : undefined;
 
       if (stateJson.ok && stateJson.state) {
-        const normalized = normalizeSingleNayraProfile(stateJson.state);
-        this.saveLocalOnly(normalized);
-        return { state: normalized, online: true, health: healthJson };
+        return { state: stateJson.state, online: true, health: healthJson };
       }
       return { state: null, online: false };
     } catch {
@@ -407,9 +399,6 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
         };
       }
 
-      if (data.state) {
-        this.saveLocalOnly(data.state);
-      }
       return {
         ok: true,
         state: data.state,
@@ -454,7 +443,6 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
         state?: FiscalDatabaseState;
         soapPreview?: SatSoapPreviewResponse;
       };
-      if (data.state) this.saveLocalOnly(data.state);
       return data;
     } catch {
       return { ok: false };
@@ -496,7 +484,6 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
         requestsCreated?: number;
         state?: FiscalDatabaseState;
       };
-      if (data.state) this.saveLocalOnly(data.state);
       return data;
     } catch {
       return { ok: false };
@@ -527,7 +514,6 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
         importedCount?: number;
         state?: FiscalDatabaseState;
       };
-      if (data.state) this.saveLocalOnly(data.state);
       return data;
     } catch {
       return { ok: false };
@@ -548,7 +534,6 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
         linkedCount?: number;
         state?: FiscalDatabaseState;
       };
-      if (data.state) this.saveLocalOnly(data.state);
       return data;
     } catch {
       return { ok: false };
