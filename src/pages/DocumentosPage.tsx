@@ -307,7 +307,7 @@ export const DocumentosPage: React.FC = () => {
                 <div className="flex h-80 flex-col items-center justify-center text-center text-slate-500">
                   <FileText className="h-10 w-10 text-slate-300" />
                   <p className="mt-2 text-sm font-semibold text-slate-700">
-                    Documento aún no cargado para {activeEmpresa.rfc}
+                    Documento aún no cargado para {activeEmpresa.rfc || activeEmpresa.razon_social}
                   </p>
                   {!isReadOnly && (
                     <button

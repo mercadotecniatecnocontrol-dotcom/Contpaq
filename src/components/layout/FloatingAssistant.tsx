@@ -78,7 +78,7 @@ export const FloatingAssistant: React.FC = () => {
               <div>
                 <p className="text-xs font-semibold">Asistente Tecno (En vivo)</p>
                 <p className="text-[10px] text-blue-100 truncate max-w-[175px]">
-                  {activeEmpresa.rfc} · Solo Portal Fiscal
+                  {activeEmpresa.rfc || activeEmpresa.razon_social} · Solo Portal Fiscal
                 </p>
               </div>
             </div>

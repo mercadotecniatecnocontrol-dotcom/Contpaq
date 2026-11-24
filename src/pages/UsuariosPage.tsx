@@ -158,7 +158,7 @@ export const UsuariosPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => acceptInvitation(u.id)}
-                            title="Simular aceptación de invitación"
+                            title="Activar acceso del usuario"
                             className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 cursor-pointer"
                           >
                             <CheckCircle2 className="h-3 w-3" />

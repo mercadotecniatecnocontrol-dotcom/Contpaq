@@ -169,7 +169,7 @@ export const VinculacionesPage: React.FC = () => {
                     Conector Aspel SAE — {activeEmpresa.razon_social}
                   </h2>
                   {!aspelConfig ? (
-                    <StatusBadge variant="neutral">Pendiente de configurar</StatusBadge>
+                    <StatusBadge variant="neutral">Sin configurar</StatusBadge>
                   ) : (
                     <StatusBadge variant={aspelConfig.conectado ? 'success' : 'danger'} dot pulse>
                       {aspelConfig.conectado ? 'Conectado' : 'Sin conexión'}
@@ -178,8 +178,8 @@ export const VinculacionesPage: React.FC = () => {
                 </div>
                 {!aspelConfig ? (
                   <p className="mt-1 text-slate-500">
-                    Registra una empresa y proporciona los datos de acceso de Aspel SAE para activar
-                    la vinculación real de documentos y pagos.
+                    Configura la conexión con Aspel SAE para consultar el estatus de vinculación de
+                    comprobantes y pagos.
                   </p>
                 ) : aspelConfig.conectado ? (
                   <p className="mt-1 text-slate-600">
@@ -196,32 +196,19 @@ export const VinculacionesPage: React.FC = () => {
               </div>
             </div>
 
-            {!isReadOnly && aspelConfig && (
+            {!isReadOnly && aspelConfig && !aspelConfig.conectado && (
               <div className="flex items-center gap-2">
-                {aspelConfig.conectado ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toggleAspelConnection();
-                      showToast('Se pausó temporalmente la conexión con Aspel SAE');
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
-                  >
-                    Simular caída
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toggleAspelConnection();
-                      showToast('Conexión con Aspel SAE restaurada');
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer"
-                  >
-                    <RotateCw className="h-3.5 w-3.5" />
-                    Reintentar conexión
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleAspelConnection();
+                    showToast('Conexión con Aspel SAE restablecida');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  Reintentar conexión
+                </button>
               </div>
             )}
           </div>

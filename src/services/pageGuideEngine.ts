@@ -428,7 +428,7 @@ export const PAGE_GUIDE_CATALOG: Record<FiscalRoute, PageGuideDefinition> = {
     seccionesYElementos: [
       'Botón "Actualizar SAT": ejecuta de inmediato una consulta de los comprobantes más recientes emitidos y recibidos ante el SAT sin duplicar registros.',
       'Zona de Carga Masiva XML / ZIP (arrastrar y soltar): permite cargar archivos .xml individuales o paquetes .zip completos descargados del SAT. Interpreta automáticamente CFDI 4.0/3.3, Pagos 2.0, Nómina 1.2 y Carta Porte, y si detecta un RFC nuevo le ofrece dar de alta la empresa en un clic.',
-      'Descarga Histórica (hasta 5 años) y Modo Empresa Limpia: permite solicitar ejercicios completos anteriores (2022–2026) o vaciar los registros actuales de la empresa para trabajar únicamente con sus XML propios.',
+      'Descarga Histórica (hasta 5 años): permite solicitar ejercicios completos anteriores para mantener actualizado el repositorio fiscal de la empresa.',
       'Bitácora de Solicitudes SAT: tabla con folio de solicitud, periodo, estado (Completada, Procesando, Error), conteo de emitidos/recibidos y botón "Reintentar" en caso de intermitencia del portal del SAT (código 5004).',
     ],
     dudasFrecuentes: [

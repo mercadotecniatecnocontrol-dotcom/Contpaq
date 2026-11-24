@@ -270,7 +270,7 @@ export const AsistentePage: React.FC = () => {
               </p>
               <p className="text-[11px] text-slate-500">
                 Respuestas en tiempo real y análisis multi-documento sobre{' '}
-                <strong>{activeEmpresa.rfc}</strong> · PDF, Excel, CSV, XML, ZIP y TXT
+                <strong>{activeEmpresa.rfc || activeEmpresa.razon_social}</strong> · PDF, Excel, CSV, XML, ZIP y TXT
               </p>
             </div>
           </div>

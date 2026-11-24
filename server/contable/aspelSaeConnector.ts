@@ -21,8 +21,7 @@ export function syncAspelPendingOnServer(
         rol: 'contador',
         modulo: 'Vinculaciones Aspel SAE',
         accion: 'Consulta de sincronización Aspel SAE',
-        detalle:
-          'Conector Aspel SAE pendiente de configurar con servidor real (0 registros simulados).',
+        detalle: 'Conector Aspel SAE sin configuración activa para la empresa seleccionada.',
         fecha: nowIso,
       },
       ...state.bitacora,

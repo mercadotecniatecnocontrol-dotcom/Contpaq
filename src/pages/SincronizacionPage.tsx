@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Clock,
   Download,
-  Eraser,
   FileArchive,
   History,
   RefreshCw,
@@ -35,7 +34,6 @@ export const SincronizacionPage: React.FC = () => {
     retrySyncRow,
     triggerHistoricalSync,
     importManualCfdis,
-    clearEmpresaCfdis,
     addEmpresa,
     selectEmpresa,
     navigate,
@@ -46,7 +44,6 @@ export const SincronizacionPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [manualModal, setManualModal] = useState(false);
   const [histModal, setHistModal] = useState(false);
-  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [selectedYears, setSelectedYears] = useState<number[]>([2025]);
 
   // Estado de carga masiva XML / ZIP
@@ -202,15 +199,6 @@ export const SincronizacionPage: React.FC = () => {
             <>
               <button
                 type="button"
-                onClick={() => setClearConfirmOpen(true)}
-                title="Vaciar los CFDIs demo de esta empresa para probar con tus XML/ZIP reales"
-                className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-100 cursor-pointer"
-              >
-                <Eraser className="h-3.5 w-3.5" />
-                Modo empresa limpia
-              </button>
-              <button
-                type="button"
                 onClick={() => {
                   setSummary(null);
                   setProgress({ done: 0, total: 0 });
@@ -248,8 +236,8 @@ export const SincronizacionPage: React.FC = () => {
           <div className="text-xs text-blue-950">
             <p className="font-bold">Aún no hay una empresa (RFC) registrada</p>
             <p className="mt-0.5 text-blue-800">
-              Registra primero tu empresa real en el apartado <strong>Empresas (RFC)</strong> para
-              poder cargar tus archivos <strong>.zip</strong> o <strong>.xml</strong> del SAT.
+              Registra tu empresa en <strong>Empresas (RFC)</strong> para importar tus archivos{' '}
+              <strong>.zip</strong> o <strong>.xml</strong> del SAT.
             </p>
           </div>
           <button
@@ -264,11 +252,12 @@ export const SincronizacionPage: React.FC = () => {
         <div className="animate-fade-up flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-blue-950">
             <p className="font-bold">
-              Sin comprobantes cargados para {activeEmpresa.razon_social} ({activeEmpresa.rfc})
+              Sin comprobantes cargados para {activeEmpresa.razon_social}
+              {activeEmpresa.rfc ? ` (${activeEmpresa.rfc})` : ''}
             </p>
             <p className="mt-0.5 text-blue-800">
-              Arrastra un archivo <strong>.zip</strong> o archivos <strong>.xml</strong> descargados
-              del SAT para ver tus datos reales en Dashboard, IVA, ISR y los indicadores.
+              Arrastra un archivo <strong>.zip</strong> o archivos <strong>.xml</strong> del SAT
+              para actualizar automáticamente el Dashboard, IVA, ISR y los indicadores fiscales.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -615,7 +604,7 @@ export const SincronizacionPage: React.FC = () => {
                           </p>
                           <p className="mt-0.5 text-[11px] text-amber-800">
                             {summary.suggestedRfc.razonSocial} (Régimen{' '}
-                            {summary.suggestedRfc.regimen}). ¿Quieres activar esta empresa limpia e
+                            {summary.suggestedRfc.regimen}). ¿Deseas registrar esta empresa e
                             importar todo el paquete en 1 clic?
                           </p>
                         </div>
@@ -688,55 +677,6 @@ export const SincronizacionPage: React.FC = () => {
               >
                 Listo
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Confirmar Modo Empresa Limpia */}
-      {clearConfirmOpen && (
-        <div className="animate-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
-          <div className="animate-modal-pop w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-base font-bold text-slate-900">Activar modo empresa limpia</h2>
-              <button
-                type="button"
-                onClick={() => setClearConfirmOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-4 space-y-3 text-xs text-slate-600">
-              <p>
-                Esto vaciará los <strong>{companyCfdiCount} CFDIs</strong>, pagos y bitácora de
-                descargas actuales de <strong>{activeEmpresa.razon_social}</strong> (
-                <span className="font-mono-code">{activeEmpresa.rfc}</span>) para que puedas cargar
-                un paquete <strong>.zip / .xml real del SAT</strong> sin mezclar cifras de prueba.
-              </p>
-              <p className="rounded-xl bg-slate-50 p-3 text-slate-500">
-                Puedes volver a los datos de demostración en cualquier momento desde el menú de
-                usuario → <strong>Restaurar datos demo</strong>.
-              </p>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setClearConfirmOpen(false)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 font-medium text-slate-700 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearEmpresaCfdis(activeEmpresa.id);
-                    setClearConfirmOpen(false);
-                  }}
-                  className="btn-tactile rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white hover:bg-rose-700 cursor-pointer"
-                >
-                  Sí, vaciar CFDIs
-                </button>
-              </div>
             </div>
           </div>
         </div>

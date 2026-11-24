@@ -1273,15 +1273,12 @@ export function getCedulaIsrPeriodo(
   };
 }
 
-// =========================================================================
-// INDICADORES FINANCIEROS Y COMERCIALES (Ventas, Compras, Nómina, Top 5, Aging)
-// =========================================================================
 export interface TopContraparteRow {
   rank: number;
   nombre: string;
   rfc: string;
-  flujoMonto: number; // Total cobrado o pagado
-  pendienteMonto: number; // Pendiente por cobrar o pagar
+  flujoMonto: number;
+  pendienteMonto: number;
   totalFacturado: number;
 }
 
@@ -1424,7 +1421,6 @@ export function getIndicadoresFinancieros(
       sueldosNetos,
     };
   };
-
   const currIdx = Math.max(0, meses.findIndex((m) => m.key === periodo));
   const prevKey = currIdx > 0 ? meses[currIdx - 1].key : meses[0].key;
   const currM = calcMonthMetrics(periodo);
@@ -1449,7 +1445,6 @@ export function getIndicadoresFinancieros(
     comprasPct: Number(((r.comprasNetas / maxAnual) * 100).toFixed(1)),
   }));
 
-  // Top 5 Clientes y Top 5 Proveedores (del ejercicio hasta el periodo o del periodo si tiene datos)
   const buildTop5 = (dir: 'E' | 'R'): TopContraparteRow[] => {
     const scopeCfdis = cfdis.filter(
       (c) =>
@@ -1591,9 +1586,6 @@ export function getIndicadoresFinancieros(
   };
 }
 
-// =========================================================================
-// VISOR SAT AUDITORÍA: COMPARATIVA INGRESOS NOMINALES, IVA Y ALERTAS LADO A LADO
-// =========================================================================
 export interface AlertaSideBucket {
   count: number;
   subtotal: number;

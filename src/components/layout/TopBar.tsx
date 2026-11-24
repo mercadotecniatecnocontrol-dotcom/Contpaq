@@ -164,8 +164,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileMenu }) => {
               </p>
               <p className="truncate font-mono-code text-[10px] text-slate-500">
                 {db.empresas.length > 0
-                  ? `${activeEmpresa.rfc} · Rég. ${activeEmpresa.regimen}`
-                  : 'Esperando datos reales'}
+                  ? activeEmpresa.rfc
+                    ? `${activeEmpresa.rfc} · Rég. ${activeEmpresa.regimen}`
+                    : `Régimen ${activeEmpresa.regimen} · Persona ${activeEmpresa.tipo_persona === 'moral' ? 'Moral' : 'Física'}`
+                  : 'Registrar empresa (RFC)'}
               </p>
             </div>
             <ChevronDown
@@ -203,7 +205,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileMenu }) => {
                         <div className="min-w-0">
                           <p className="truncate text-xs font-semibold">{emp.razon_social}</p>
                           <p className="font-mono-code text-[11px] text-slate-500">
-                            {emp.rfc} · Régimen {emp.regimen}
+                            {emp.rfc
+                              ? `${emp.rfc} · Régimen ${emp.regimen}`
+                              : `Régimen ${emp.regimen} · Persona ${emp.tipo_persona === 'moral' ? 'Moral' : 'Física'}`}
                           </p>
                         </div>
                         {emp.favorita && (
@@ -288,7 +292,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileMenu }) => {
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-900">Centro de notificaciones</h3>
-                  <p className="text-[11px] text-slate-500">{activeEmpresa.rfc}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {activeEmpresa.rfc || activeEmpresa.razon_social}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button

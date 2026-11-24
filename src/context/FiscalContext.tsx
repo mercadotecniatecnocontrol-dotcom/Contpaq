@@ -94,7 +94,7 @@ const EMPTY_EMPRESA: Empresa = {
   rfc: 'Sin RFC',
   razon_social: 'Sin empresa registrada',
   regimen: '—',
-  regimen_descripcion: 'Pendiente de registro',
+  regimen_descripcion: 'Sin régimen asignado',
   tipo_persona: 'moral',
   favorita: false,
   ultimo_acceso: '',
@@ -202,6 +202,10 @@ interface FiscalContextValue {
   selectEmpresa: (empresaId: string) => void;
   toggleFavorita: (empresaId: string) => void;
   addEmpresa: (payload: Omit<Empresa, 'id' | 'favorita' | 'ultimo_acceso'>) => Empresa;
+  updateEmpresa: (
+    empresaId: string,
+    payload: Omit<Empresa, 'id' | 'favorita' | 'ultimo_acceso'>,
+  ) => void;
   clearEmpresaCfdis: (empresaId?: string) => void;
   updateEfirma: (payload: {
     numero_serie: string;
@@ -731,6 +735,42 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [currentUser, showToast, updateDb],
   );
 
+  const updateEmpresa = useCallback(
+    (empresaId: string, payload: Omit<Empresa, 'id' | 'favorita' | 'ultimo_acceso'>) => {
+      const cleanRfc = payload.rfc.trim() ? sanitizeRfcInput(payload.rfc) : '';
+      const cleanRazon = sanitizeTextInput(payload.razon_social, 180);
+      const cleanRegimen = sanitizeTextInput(payload.regimen, 10);
+      const cleanRegDesc = sanitizeTextInput(payload.regimen_descripcion, 140);
+      const cleanCp = sanitizeTextInput(payload.codigo_postal, 10);
+
+      updateDb((prev) => ({
+        ...prev,
+        empresas: prev.empresas.map((e) =>
+          e.id === empresaId
+            ? {
+                ...e,
+                rfc: cleanRfc,
+                razon_social: cleanRazon,
+                regimen: cleanRegimen,
+                regimen_descripcion: cleanRegDesc,
+                tipo_persona: payload.tipo_persona,
+                codigo_postal: cleanCp,
+              }
+            : e,
+        ),
+        bitacora: addBitacora(
+          prev,
+          'Actualización de empresa',
+          'Empresas',
+          `Se actualizaron los datos fiscales de ${cleanRazon}${cleanRfc ? ` (${cleanRfc})` : ''}.`,
+          empresaId,
+        ),
+      }));
+      showToast(`Datos de ${cleanRazon} actualizados correctamente`);
+    },
+    [showToast, updateDb],
+  );
+
   const clearEmpresaCfdis = useCallback(
     (empresaId?: string) => {
       const targetId = empresaId || activeEmpresa.id;
@@ -759,14 +799,14 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           ),
           bitacora: addBitacora(
             prev,
-            'Limpieza de CFDIs (Modo empresa limpia)',
+            'Limpieza de comprobantes',
             'Sincronización',
-            `Se vaciaron ${removedUuids.size} comprobantes de ${emp?.rfc || targetId} para carga real de XML/ZIP.`,
+            `Se vaciaron ${removedUuids.size} comprobantes de ${emp?.rfc || targetId}.`,
             targetId,
           ),
         };
       });
-      showToast(`Empresa ${emp?.rfc || ''} lista en modo limpio (0 CFDIs)`);
+      showToast(`Comprobantes de ${emp?.rfc || ''} eliminados correctamente`);
     },
     [activeEmpresa.id, db.empresas, showToast, updateDb],
   );
@@ -915,16 +955,16 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     void fiscalRepository.triggerBackendSatSync(activeEmpresa.id, actor).then((res) => {
       if (res.ok && res.state) {
         setDb(res.state);
-        showToast('Sincronización registrada (sin comprobantes simulados)');
+        showToast('Consulta de sincronización registrada correctamente');
         return;
       }
-      showToast('No fue posible conectar con el servicio SAT. Sube tus archivos XML/ZIP reales.');
+      showToast('No fue posible conectar con el servicio SAT en este momento.');
     });
   }, [activeEmpresa.id, currentUser.nombre, currentUser.rol, showToast]);
 
   const retrySyncRow = useCallback(
     (_descargaId: string) => {
-      showToast('El reintento automático se activará al conectar la e.firma real con el SAT');
+      showToast('Carga la e.firma de la empresa para ejecutar reintentos ante el SAT');
     },
     [showToast],
   );
@@ -944,9 +984,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       void fiscalRepository.triggerBackendHistoricalSat(activeEmpresa.id, years, actor).then((res) => {
         if (res.ok && res.state) {
           setDb(res.state);
-          showToast(
-            `Solicitud histórica registrada para ${years.join(', ')} (pendiente de archivos reales del SAT)`,
-          );
+          showToast(`Solicitud histórica registrada para los ejercicios ${years.join(', ')}`);
           return;
         }
         showToast('No fue posible registrar la solicitud histórica en el servidor');
@@ -1248,7 +1286,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const syncAspelNow = useCallback(() => {
     const cfg = db.aspel_configs.find((c) => c.empresa_id === activeEmpresa.id);
     if (!activeEmpresa.id || !cfg?.conectado) {
-      showToast('Configura primero los datos reales de conexión de Aspel SAE');
+      showToast('Configura primero la conexión con Aspel SAE para sincronizar');
       return;
     }
     showToast('Sin registros nuevos pendientes de sincronizar con Aspel SAE');
@@ -1551,6 +1589,7 @@ export const FiscalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         selectEmpresa,
         toggleFavorita,
         addEmpresa,
+        updateEmpresa,
         clearEmpresaCfdis,
         updateEfirma,
         inviteUsuario,

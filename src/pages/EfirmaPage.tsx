@@ -144,7 +144,11 @@ export const EfirmaPage: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-slate-900">{activeEmpresa.razon_social}</h2>
-                  <p className="font-mono-code text-xs text-slate-500">RFC: {activeEmpresa.rfc}</p>
+                  <p className="font-mono-code text-xs text-slate-500">
+                    {activeEmpresa.rfc
+                      ? `RFC: ${activeEmpresa.rfc}`
+                      : `Régimen ${activeEmpresa.regimen} · ${activeEmpresa.regimen_descripcion}`}
+                  </p>
                 </div>
               </div>
               {efirma ? (

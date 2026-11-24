@@ -24,14 +24,23 @@ import { StatusBadge } from '../components/shared/StatusBadge';
 type SortOption = 'acceso_desc' | 'nombre_asc' | 'nombre_desc' | 'rfc_asc' | 'rfc_desc';
 
 export const EmpresasPage: React.FC = () => {
-  const { db, activeEmpresa, selectEmpresa, toggleFavorita, addEmpresa, currentUser, navigate } =
-    useFiscal();
+  const {
+    db,
+    activeEmpresa,
+    selectEmpresa,
+    toggleFavorita,
+    addEmpresa,
+    updateEmpresa,
+    currentUser,
+    navigate,
+  } = useFiscal();
 
   const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('acceso_desc');
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingEmpresaId, setEditingEmpresaId] = useState<string | null>(null);
 
   // Formulario nueva empresa
   const [rfc, setRfc] = useState('');
@@ -79,6 +88,30 @@ export const EmpresasPage: React.FC = () => {
     return <StatusBadge variant="success" dot>e.firma activa</StatusBadge>;
   };
 
+  const openCreateModal = () => {
+    setEditingEmpresaId(null);
+    setRfc('');
+    setRazonSocial('');
+    setRegimen('601');
+    setTipoPersona('moral');
+    setCp('');
+    setFormError('');
+    setModalOpen(true);
+  };
+
+  const openEditModal = (empId: string) => {
+    const target = db.empresas.find((e) => e.id === empId);
+    if (!target) return;
+    setEditingEmpresaId(target.id);
+    setRfc(target.rfc);
+    setRazonSocial(target.razon_social);
+    setRegimen(target.regimen || '601');
+    setTipoPersona(target.tipo_persona);
+    setCp(target.codigo_postal || '');
+    setFormError('');
+    setModalOpen(true);
+  };
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanRfc = rfc.trim().toUpperCase();
@@ -87,7 +120,11 @@ export const EmpresasPage: React.FC = () => {
       setFormError('RFC inválido. Debe tener 12 caracteres (Persona Moral) o 13 (Persona Física).');
       return;
     }
-    if (db.empresas.some((emp) => emp.rfc.toUpperCase() === cleanRfc)) {
+    if (
+      db.empresas.some(
+        (emp) => emp.id !== editingEmpresaId && emp.rfc && emp.rfc.toUpperCase() === cleanRfc,
+      )
+    ) {
       setFormError('Este RFC ya está registrado en el portal.');
       return;
     }
@@ -96,15 +133,22 @@ export const EmpresasPage: React.FC = () => {
       return;
     }
 
-    addEmpresa({
+    const payload = {
       rfc: cleanRfc,
       razon_social: razonSocial.trim(),
       regimen,
       regimen_descripcion: (CATALOGO_REGIMEN[regimen] || regimen).replace(/^\d+\s*-\s*/, ''),
       tipo_persona: tipoPersona,
       codigo_postal: cp.trim(),
-    });
+    };
 
+    if (editingEmpresaId) {
+      updateEmpresa(editingEmpresaId, payload);
+    } else {
+      addEmpresa(payload);
+    }
+
+    setEditingEmpresaId(null);
     setRfc('');
     setRazonSocial('');
     setCp('');
@@ -155,7 +199,7 @@ export const EmpresasPage: React.FC = () => {
           {isPropietario && (
             <button
               type="button"
-              onClick={() => setModalOpen(true)}
+              onClick={openCreateModal}
               className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm cursor-pointer"
             >
               <Plus className="h-4 w-4" />
@@ -246,7 +290,7 @@ export const EmpresasPage: React.FC = () => {
           </h3>
           <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
             {db.empresas.length === 0
-              ? 'El portal se encuentra limpio y listo para recibir los RFC reales de la empresa, sus CFDIs del SAT y la vinculación con Aspel SAE.'
+              ? 'Da de alta tu primera empresa para gestionar sus comprobantes del SAT, declaraciones y vinculación con Aspel SAE.'
               : 'Ajusta el texto de búsqueda o desactiva el filtro de favoritas.'}
           </p>
           {db.empresas.length === 0 && isPropietario && (
@@ -286,7 +330,7 @@ export const EmpresasPage: React.FC = () => {
                       </div>
                       <div>
                         <span className="font-mono-code text-xs font-semibold text-slate-700">
-                          {emp.rfc}
+                          {emp.rfc || `Régimen ${emp.regimen}`}
                         </span>
                         <p className="text-[11px] capitalize text-slate-500">
                           Persona {emp.tipo_persona}
@@ -322,22 +366,33 @@ export const EmpresasPage: React.FC = () => {
                   <span className="text-[11px] text-slate-400">
                     Acceso: {formatShortDate(emp.ultimo_acceso)}
                   </span>
-                  {isActive ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
-                      <CheckCircle2 className="h-4 w-4" /> Activa
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        selectEmpresa(emp.id);
-                        navigate(currentUser.rol === 'pagos' ? 'emitidos' : 'dashboard');
-                      }}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 cursor-pointer"
-                    >
-                      Seleccionar
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isPropietario && (
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(emp.id)}
+                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
+                      >
+                        Editar
+                      </button>
+                    )}
+                    {isActive ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+                        <CheckCircle2 className="h-4 w-4" /> Activa
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          selectEmpresa(emp.id);
+                          navigate(currentUser.rol === 'pagos' ? 'emitidos' : 'dashboard');
+                        }}
+                        className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 cursor-pointer"
+                      >
+                        Seleccionar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -413,7 +468,9 @@ export const EmpresasPage: React.FC = () => {
         <div className="animate-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
           <div className="animate-modal-pop w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-base font-bold text-slate-900">Registrar nueva empresa (RFC)</h2>
+              <h2 className="text-base font-bold text-slate-900">
+                {editingEmpresaId ? 'Editar datos fiscales de la empresa' : 'Registrar nueva empresa (RFC)'}
+              </h2>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}

@@ -155,7 +155,8 @@ export const DashboardPage: React.FC = () => {
               <div>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-blue-100">
                   <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
-                  Portal Operativo Tecnocontrol · {activeEmpresa.rfc}
+                  Portal Operativo Tecnocontrol
+                  {activeEmpresa.rfc ? ` · ${activeEmpresa.rfc}` : ''}
                 </span>
                 <h1 className="mt-1.5 text-xl font-bold tracking-tight text-white">
                   Dashboard Fiscal
@@ -209,10 +210,10 @@ export const DashboardPage: React.FC = () => {
             <div className="flex items-start gap-3 text-xs text-blue-950">
               <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
               <div>
-                <p className="font-bold">Portal limpio — esperando datos reales</p>
+                <p className="font-bold">Comienza registrando tu empresa</p>
                 <p className="mt-0.5 text-blue-800">
-                  No hay empresas ni comprobantes cargados todavía. Cuando tengas los datos reales
-                  (RFC, e.firma, XML del SAT o conexión a Aspel SAE), registra primero tu empresa.
+                  Da de alta tu RFC para consultar comprobantes del SAT, pre-determinar IVA e ISR y
+                  administrar el cumplimiento fiscal desde el portal.
                 </p>
               </div>
             </div>
@@ -221,7 +222,7 @@ export const DashboardPage: React.FC = () => {
               onClick={() => navigate('empresas')}
               className="btn-tactile inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#0e4b85] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0b3c6c] cursor-pointer"
             >
-              Registrar empresa (RFC)
+              Registrar empresa
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -265,8 +266,8 @@ export const DashboardPage: React.FC = () => {
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
               <span>
                 <strong>Comprobantes registrados ({selectedYear}):</strong>{' '}
-                <strong>{cfdisAnualesRegistrados.toLocaleString('es-MX')}</strong> CFDI(s) reales
-                cargados para {activeEmpresa.razon_social}.
+                <strong>{cfdisAnualesRegistrados.toLocaleString('es-MX')}</strong> CFDI(s)
+                registrados para {activeEmpresa.razon_social}.
               </span>
             </div>
             <button

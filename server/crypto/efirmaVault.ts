@@ -6,7 +6,6 @@ import path from 'node:path';
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
 const VAULT_FILE_PATH = path.join(DATA_DIR, 'vault.enc.json');
 
-// La llave maestra de cifrado vive SIEMPRE fuera del repositorio git (variable de entorno o perfil local del SO)
 const EXTERNAL_KEY_DIR = process.env.LOCALAPPDATA
   ? path.join(process.env.LOCALAPPDATA, 'TecnocontrolFiscal')
   : path.join(os.homedir(), '.tecnocontrol-fiscal');
@@ -92,10 +91,6 @@ function saveVaultStore(store: Record<string, VaultEncryptedRecord>): void {
   fs.renameSync(tmp, VAULT_FILE_PATH);
 }
 
-/**
- * Convierte el serial hexadecimal X.509 del SAT (ej. "3030303031303030303030353132333435363738")
- * al número de serie ASCII de 20 dígitos ("00001000000512345678").
- */
 function parseSatSerialNumber(rawHex: string): string {
   const clean = rawHex.replace(/[^0-9A-Fa-f]/g, '');
   if (clean.length === 40 && /^(3[0-9]){20}$/.test(clean)) {

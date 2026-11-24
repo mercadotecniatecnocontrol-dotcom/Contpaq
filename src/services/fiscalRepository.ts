@@ -292,13 +292,11 @@ class HybridBackendFiscalRepository implements FiscalDataRepository {
   }
 
   load(): FiscalDatabaseState {
-    // Nunca almacenar ni inicializar datos fiscales en localStorage antes de autenticar
     purgeLegacyClientStorage(false);
     return createEmptyFiscalState();
   }
 
   save(state: FiscalDatabaseState, actor?: BackendActorHeaders): void {
-    // Persistir exclusivamente en el servidor autenticado (/api/state)
     void fetch(`${API_BASE}/state`, {
       method: 'PUT',
       credentials: 'same-origin',

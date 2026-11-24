@@ -81,7 +81,7 @@ export const ConsumoPage: React.FC = () => {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Usos y consumos</h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Monitoreo real del volumen de CFDIs cargados, almacenamiento de archivos y consultas al
+              Monitoreo del volumen de CFDIs cargados, almacenamiento de archivos y consultas al
               Asistente Tecno.
             </p>
           </div>
@@ -106,7 +106,7 @@ export const ConsumoPage: React.FC = () => {
               <AnimatedNumber value={cfdiHistoricos} />
             </p>
             <p className="mt-2 text-[11px] text-slate-500">
-              Comprobantes reales incorporados sin duplicados
+              Comprobantes incorporados sin duplicados
             </p>
           </div>
 
@@ -161,9 +161,9 @@ export const ConsumoPage: React.FC = () => {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
             <h2 className="text-sm font-bold text-slate-900">
-              CFDIs incorporados por ejercicio ({activeEmpresa.rfc})
+              CFDIs incorporados por ejercicio ({activeEmpresa.rfc || activeEmpresa.razon_social})
             </h2>
-            <p className="text-xs text-slate-500">Volumen anual real en el repositorio</p>
+            <p className="text-xs text-slate-500">Volumen anual en el repositorio</p>
             {desgloseAnual.length === 0 ? (
               <div className="mt-4 flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-xs text-slate-500">
                 Sin comprobantes cargados todavía.

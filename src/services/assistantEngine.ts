@@ -319,7 +319,7 @@ const PORTAL_DIRECTORY: PortalDirectoryEntry[] = [
     route: 'sincronizacion',
     menuUbicacion: 'Menú lateral → Comprobantes SAT → Sincronización',
     roles: 'Todos los roles (carga y descargas excepto Consulta)',
-    queEncuentra: 'Bitácora diaria SAT (5/10/25), Actualizar SAT, Carga masiva de .XML y .ZIP, Modo empresa limpia y Descarga histórica hasta 5 años.',
+    queEncuentra: 'Bitácora diaria SAT (5/10/25), Actualizar SAT, Carga masiva de .XML y .ZIP y Descarga histórica hasta 5 años.',
   },
   {
     id: 5,
@@ -901,7 +901,7 @@ export function runAssistantQuery(
     case 'sincronizacion_zip': {
       return makeReply({
         vistaConsultada: 'Guía operativa · Carga masiva XML / ZIP (#fiscal/sincronizacion)',
-        text: `Con gusto le indico cómo cargar sus comprobantes o paquetes del SAT${saludoNombre}:\n\n• **Ruta directa:** **Sincronización** (\`#fiscal/sincronizacion\` · Menú lateral → Comprobantes SAT → Sincronización).\n• **Si desea trabajar sin datos de prueba:** presione primero **Modo empresa limpia** para vaciar los CFDIs demo de la empresa activa.\n• **Carga de archivos:** haga clic en **Cargar XML / ZIP** y arrastre uno o varios archivos \`.xml\` o paquetes \`.zip\` descargados del SAT.\n• El sistema descomprime en su navegador, interpreta **CFDI 4.0/3.3, Pagos 2.0, Nómina 1.2 y Carta Porte**, omite duplicados por UUID y, si el ZIP corresponde a un RFC diferente, le ofrece crear esa empresa limpia e importar todo en un clic.`,
+        text: `Con gusto le indico cómo cargar sus comprobantes o paquetes del SAT${saludoNombre}:\n\n• **Ruta directa:** **Sincronización** (\`#fiscal/sincronizacion\` · Menú lateral → Comprobantes SAT → Sincronización).\n• **Carga de archivos:** haga clic en **Cargar XML / ZIP** y arrastre uno o varios archivos \`.xml\` o paquetes \`.zip\` descargados del SAT.\n• El sistema descomprime en su navegador, interpreta **CFDI 4.0/3.3, Pagos 2.0, Nómina 1.2 y Carta Porte**, omite duplicados por UUID y, si el ZIP corresponde a un RFC diferente, le ofrece registrar esa empresa e importar todo en un clic.`,
         actions: [{ label: 'Ir a Sincronización ahora', route: 'sincronizacion' }],
       });
     }
